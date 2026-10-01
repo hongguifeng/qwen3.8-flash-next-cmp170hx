@@ -9,10 +9,21 @@ __pycache__/
 models/
 optimization/
 
-# ── 本机运行资产（体积大或与本机绑定，不应入库）──
-# 原生引擎本体：.venv / 源码 / 优化库 / 日志（8.3 GB）
-vllm-native/
-# vLLM 上游克隆（含未提交补丁，719 MB）
+# ── 本机运行资产（体积大或可复现，不入库）──
+# 原生引擎本体：.venv（~7 GB）+ 已打补丁的 vLLM 源码（958 MB，= vllm-project/vllm@a5a30471
+#   + patches/qwen38-ple-ssd.patch + ops/patches/qsa-alloc-heal.patch）+ optimization/*.so
+vllm-native/opt/vllm/
+# Triton 热缓存（158 MB，可重建；留着可省一次冷启动编译）
+vllm-native/triton_cache/
+# uv 管理的 CPython 3.12（110 MB，venv 的基解释器）
+vllm-native/uv-python/
+# 引擎日志与 pid（server.log / server-*.log / server.pid）
+vllm-native/logs/
+# 镜像时代遗留的本仓库自身克隆
+vllm-native/opt/qwen38-ssd/
+# 注意：vllm-native/bin/run_native.sh（唯一调用 `vllm serve` 的启动器）与
+# vllm-native/opt/{entrypoint,download-model}.sh 是手写脚本，**保留入库**（AGENTS.md/docs 都引用）。
+# vLLM 上游克隆（719 MB，含未提交补丁）
 ops/src-upstream/
 # Docker 回退路径的 Triton 热缓存与垃圾（136 MB）
 ops/legacy-docker/triton_cache/
