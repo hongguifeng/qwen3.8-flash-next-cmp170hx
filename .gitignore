@@ -8,3 +8,15 @@ __pycache__/
 *.safetensors
 models/
 optimization/
+
+# ── 本机运行资产（体积大或与本机绑定，不应入库）──
+# 原生引擎本体：.venv / 源码 / 优化库 / 日志（8.3 GB）
+vllm-native/
+# vLLM 上游克隆（含未提交补丁，719 MB）
+ops/src-upstream/
+# Docker 回退路径的 Triton 热缓存与垃圾（136 MB）
+ops/legacy-docker/triton_cache/
+ops/legacy-docker/junk/
+ops/logs/
+ops/measurements/
+ops/prof/

@@ -1,0 +1,65 @@
+--- a/vllm/models/qwen4_exp/nvidia/ops/qsa.py
++++ b/vllm/models/qwen4_exp/nvidia/ops/qsa.py
+@@ -1071,3 +1071,62 @@
+     "qsa_store_cache_rows",
+     "warmup_qsa_sparse_paged_attention",
+ ]
++
++
++# ---------------------------------------------------------------------------
++# Allocator healer (added 2026-09-29; behaviour of the module is unchanged --
++# this only starts a background thread when QSA_ALLOC_HEAL=1).
++#
++# Root cause of the ">=96K slow state": the engine's caching allocator is driven
++# to device free=0 with a fragmented cache, so any operator that needs a *new*
++# block calls cudaMalloc while the device is full, and the driver has to
++# reclaim/evict (~40 ms per call).  That is what made 2048-token prefills jump
++# from ~0.65 s to 2-2.6 s, and long prefills drop to ~1000 tok/s.
++# torch.cuda.empty_cache() provably cures it in place (2.641 s -> 0.725 s in the
++# same context).  This thread only fires in that pathological regime.
++# ---------------------------------------------------------------------------
++import logging as _heal_logging
++import os as _heal_os
++import threading as _heal_threading
++import time as _heal_time
++
++_heal_log = _heal_logging.getLogger("qsa_xprobe")
++
++
++def _start_alloc_heal():
++    free_mb = float(_heal_os.environ.get("QSA_ALLOC_HEAL_FREE_MB", "384"))
++    min_cached_mb = float(_heal_os.environ.get("QSA_ALLOC_HEAL_CACHED_MB", "256"))
++    cooldown = float(_heal_os.environ.get("QSA_ALLOC_HEAL_COOLDOWN_S", "1.0"))
++    n = [0]
++
++    def run():
++        last = 0.0
++        while True:
++            try:
++                free, _tot = torch.cuda.mem_get_info()
++                cached = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
++                now = _heal_time.time()
++                if (free < free_mb * 2 ** 20 and cached > min_cached_mb * 2 ** 20
++                        and now - last > cooldown):
++                    torch.cuda.empty_cache()
++                    last = now
++                    n[0] += 1
++                    if n[0] <= 20 or n[0] % 50 == 0:
++                        _heal_log.warning(
++                            "QXHEAL fired #%d: free_before=%.0fMiB cached_before=%.0fMiB",
++                            n[0], free / 2 ** 20, cached / 2 ** 20)
++            except Exception:
++                pass
++            _heal_time.sleep(0.15)
++
++    _heal_threading.Thread(target=run, daemon=True, name="qx-alloc-heal").start()
++    _heal_log.warning(
++        "QXHEAL alloc-heal thread started (free<%.0fMiB cached>%.0fMiB cooldown=%.1fs)",
++        free_mb, min_cached_mb, cooldown)
++
++
++if _heal_os.environ.get("QSA_ALLOC_HEAL", "0") == "1":
++    try:
++        _start_alloc_heal()
++    except Exception as _heal_e:  # noqa: BLE001
++        _heal_log.warning("QXHEAL failed to start: %r", _heal_e)

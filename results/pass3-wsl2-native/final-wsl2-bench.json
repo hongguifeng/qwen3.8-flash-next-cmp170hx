@@ -1,0 +1,374 @@
+[
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 1,
+    "repeat": 0,
+    "elapsed_s": 1.0459012030041777,
+    "aggregate_tokens_s": 122.38249619786384,
+    "median_decode_tokens_s": 131.1932656739637,
+    "median_ttft_s": 0.07778156200947706,
+    "responses": [
+      {
+        "ttft_s": 0.07778156200947706,
+        "latency_s": 1.0458190549979918,
+        "output_tokens": 128,
+        "decode_tokens_s": 131.1932656739637,
+        "output": "A database index speeds up lookups by creating a separate, optimized data structure that allows the database engine to find specific rows without scanning the entire table. This is analogous to the index at the back of a textbook: instead of reading every page to find a topic, you look up the topic in the index, which points you directly to the page number.\n\n### How It Works\n\n1. **Without an Index (Full Table Scan)**:\n   - The database must read every row in the table sequentially to find the matching record.\n   - This is slow, especially for large tables, because it requires reading all data from disk"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 1,
+    "repeat": 1,
+    "elapsed_s": 0.8822213610110339,
+    "aggregate_tokens_s": 145.088302841943,
+    "median_decode_tokens_s": 156.55427367128883,
+    "median_ttft_s": 0.07091602300351951,
+    "responses": [
+      {
+        "ttft_s": 0.07091602300351951,
+        "latency_s": 0.8821362919989042,
+        "output_tokens": 128,
+        "decode_tokens_s": 156.55427367128883,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 1,
+    "repeat": 2,
+    "elapsed_s": 1.0444348929886473,
+    "aggregate_tokens_s": 122.55431224987935,
+    "median_decode_tokens_s": 129.99245344709,
+    "median_ttft_s": 0.06732607299636584,
+    "responses": [
+      {
+        "ttft_s": 0.06732607299636584,
+        "latency_s": 1.0443058639939409,
+        "output_tokens": 128,
+        "decode_tokens_s": 129.99245344709,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **shorter wavelengths of light (like blue and violet) scatter way more easily than longer wavelengths (like red and orange).**\n\nThink of it like this:\n- **Blue light** is like a small, bouncy ball. It hits the air molecules and gets bounced around in every direction. So, when you look up, you\u2019re"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 4,
+    "repeat": 0,
+    "elapsed_s": 1.5859810330002801,
+    "aggregate_tokens_s": 322.8285769795266,
+    "median_decode_tokens_s": 90.86946133743484,
+    "median_ttft_s": 0.14055566000024555,
+    "responses": [
+      {
+        "ttft_s": 0.13209062701207586,
+        "latency_s": 1.5341678540135035,
+        "output_tokens": 128,
+        "decode_tokens_s": 90.57988929155518,
+        "output": "A database index speeds up lookups by creating a separate, optimized data structure that allows the database engine to find specific rows without scanning the entire table. This is analogous to the index at the back of a textbook: instead of reading every page to find a topic, you look up the topic in the index, which points you directly to the page number.\n\n### How It Works\n\n1. **Without an Index (Full Table Scan)**:\n   - The database must read every row in the table sequentially to find the matching record.\n   - This is slow, especially for large tables, because it requires reading all data from disk"
+      },
+      {
+        "ttft_s": 0.14088880900817458,
+        "latency_s": 1.3644339550082805,
+        "output_tokens": 128,
+        "decode_tokens_s": 103.79674212690556,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      },
+      {
+        "ttft_s": 0.14065422500425484,
+        "latency_s": 1.5854713729931973,
+        "output_tokens": 128,
+        "decode_tokens_s": 87.90039637664376,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long and sturdy, so it mostly just drives straight through the atmosphere without getting bumped around much.\n- **Blue light** is like a tiny, bouncy ball."
+      },
+      {
+        "ttft_s": 0.14045709499623626,
+        "latency_s": 1.5336267599923303,
+        "output_tokens": 128,
+        "decode_tokens_s": 91.1590333833145,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, particularly in high-performance servers, databases, and operating systems. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs:\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed until the data is read from or written to the disk.\n\n#### \u2705 Advantages\n- **Simplicity:** Easy to reason about. The code flow"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 4,
+    "repeat": 1,
+    "elapsed_s": 1.7540059439925244,
+    "aggregate_tokens_s": 291.90322972028775,
+    "median_decode_tokens_s": 91.08405393455544,
+    "median_ttft_s": 0.14755927150690695,
+    "responses": [
+      {
+        "ttft_s": 0.136932061999687,
+        "latency_s": 1.3557016820122954,
+        "output_tokens": 128,
+        "decode_tokens_s": 104.2034506888071,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      },
+      {
+        "ttft_s": 0.14769739800249226,
+        "latency_s": 1.5420297240052605,
+        "output_tokens": 128,
+        "decode_tokens_s": 91.0830206196825,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (like nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long and sturdy, so it mostly just drives straight through the atmosphere without getting knocked around much.\n- **Blue light** is like a tiny, lightweight sports car."
+      },
+      {
+        "ttft_s": 0.14757978700799868,
+        "latency_s": 1.5418804770015413,
+        "output_tokens": 128,
+        "decode_tokens_s": 91.08508724942837,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, particularly in high-performance servers, databases, and operating systems. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs:\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed until the data is read from or written to the disk.\n\n#### \u2705 Advantages\n- **Simplicity:** Easy to reason about. The code flow"
+      },
+      {
+        "ttft_s": 0.14753875600581523,
+        "latency_s": 1.7536021760024596,
+        "output_tokens": 128,
+        "decode_tokens_s": 79.07533315232679,
+        "output": "The satellite imagery was supposed to be routine. Dr. Aris Thorne, a marine geologist with the National Oceanic and Atmospheric Administration, had spent the last three years mapping the shifting tectonic plates of the Pacific Rim. He was used to the mundane: data streams, coffee stains on lab coats, and the quiet hum of servers.\n\nBut on a Tuesday afternoon, while reviewing high-resolution bathymetric scans of the South Pacific, Aris noticed an anomaly. A cluster of pixels, dark and jagged, sat where open ocean should have been. It wasn\u2019t a glitch. It was land.\n\nHe zoomed"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 4,
+    "repeat": 2,
+    "elapsed_s": 1.6763583900028607,
+    "aggregate_tokens_s": 305.4239493495936,
+    "median_decode_tokens_s": 88.04926548514308,
+    "median_ttft_s": 0.1450897030008491,
+    "responses": [
+      {
+        "ttft_s": 0.14541675700456835,
+        "latency_s": 1.5994429099955596,
+        "output_tokens": 128,
+        "decode_tokens_s": 87.34368342602079,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long and sturdy, so it mostly just drives straight through the atmosphere without getting knocked around much.\n- **Blue light** is like a tiny, lightweight sports car."
+      },
+      {
+        "ttft_s": 0.14521813500323333,
+        "latency_s": 1.5240613170026336,
+        "output_tokens": 128,
+        "decode_tokens_s": 92.10619572839519,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, particularly in high-performance servers, databases, and operating systems. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs:\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed until the data is read from or written to the disk.\n\n#### \u2705 Advantages\n- **Simplicity:** Easy to reason about. The code flow"
+      },
+      {
+        "ttft_s": 0.1352876620076131,
+        "latency_s": 1.6759290420013713,
+        "output_tokens": 128,
+        "decode_tokens_s": 82.43320064563925,
+        "output": "The rain had been falling for three days straight, turning the deck of the *R.V. Horizon* into a slick, gray mirror. Dr. Elara Vance wiped her glasses with a trembling hand, her eyes fixed on the sonar screen. The readings were wrong. They had to be wrong.\n\nFor weeks, the team had been mapping the deep-sea trenches of the Pacific, expecting nothing but basalt and silence. But today, the echo returned something else: a solid, unyielding mass where there should have been open water.\n\n\"Check the calibration again,\" Elara muttered, her voice barely audible over the"
+      },
+      {
+        "ttft_s": 0.1449612709984649,
+        "latency_s": 1.5758690299990121,
+        "output_tokens": 128,
+        "decode_tokens_s": 88.75484754426539,
+        "output": "A hash table is a data structure that maps keys to values using a hash function. Ideally, the hash function produces a unique index for every key. However, in practice, different keys can produce the same index. This is called a **collision**.\n\nTo handle collisions, hash tables primarily use two strategies: **Separate Chaining** and **Open Addressing**.\n\n---\n\n### 1. Separate Chaining\n\nIn separate chaining, each bucket (index) in the hash table holds a pointer to a linked list (or another dynamic data structure) of entries that hash to that same index.\n\n#### How it works:\n"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 8,
+    "repeat": 0,
+    "elapsed_s": 3.3300915059953695,
+    "aggregate_tokens_s": 307.4990576554517,
+    "median_decode_tokens_s": 84.7171472213237,
+    "median_ttft_s": 0.7892889075010316,
+    "responses": [
+      {
+        "ttft_s": 0.14765109099971596,
+        "latency_s": 1.6863146050018258,
+        "output_tokens": 128,
+        "decode_tokens_s": 82.53916392003681,
+        "output": "A database index speeds up lookups by creating a separate, optimized data structure that allows the database engine to find specific rows without scanning the entire table. This is analogous to the index at the back of a textbook: instead of reading every page to find a topic, you look up the topic in the index, which points you directly to the page number.\n\n### How It Works\n\n1. **Without an Index (Full Table Scan)**:\n   - The database must read every row in the table sequentially to find the matching record.\n   - This is slow, especially for large tables, because it requires reading all data from disk"
+      },
+      {
+        "ttft_s": 0.1379685379943112,
+        "latency_s": 1.3357784179970622,
+        "output_tokens": 128,
+        "decode_tokens_s": 106.02684292411107,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      },
+      {
+        "ttft_s": 0.14736956400156487,
+        "latency_s": 1.686146316002123,
+        "output_tokens": 128,
+        "decode_tokens_s": 82.53308989422133,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long and sturdy, so it mostly just drives straight through the atmosphere without getting knocked around much.\n- **Blue light** is like a tiny, lightweight sports car."
+      },
+      {
+        "ttft_s": 0.14738034199399408,
+        "latency_s": 1.5668901439930778,
+        "output_tokens": 128,
+        "decode_tokens_s": 89.4675047830927,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, database design, and high-performance computing. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs, followed by a summary table.\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed to the next instruction until the disk read/write is finished.\n\n#### \u2705 Advantages\n- **Simplicity:** Easy to reason about. The"
+      },
+      {
+        "ttft_s": 1.4309267240023473,
+        "latency_s": 3.289966970012756,
+        "output_tokens": 128,
+        "decode_tokens_s": 68.31482011890179,
+        "output": "Dr. Elara Vance had spent the last three years staring at satellite imagery, her eyes burning from the blue light of the monitors. She was a cartographer for the Global Oceanic Survey, tasked with mapping the shifting coastlines of the Pacific. Her job was tedious, repetitive, and often felt like shouting into a void.\n\nBut today, the void shouted back.\n\nIt started as a glitch. A pixelated smudge in the data stream from the new high-resolution LIDAR drones. Elara almost dismissed it as sensor noise, a common artifact in the turbulent waters near the Mariana Trench. But when she ran the"
+      },
+      {
+        "ttft_s": 1.7853081210050732,
+        "latency_s": 3.246839961007936,
+        "output_tokens": 128,
+        "decode_tokens_s": 86.8951305226106,
+        "output": "A hash table is a data structure that maps keys to values using a hash function. Ideally, the hash function produces a unique index for every key. However, in practice, different keys can produce the same index. This is called a **collision**.\n\nTo handle collisions, hash tables typically use one of two primary strategies: **Chaining** and **Open Addressing**.\n\n---\n\n### 1. Chaining (Separate Chaining)\n\nIn this approach, each bucket (index) in the hash table holds a pointer to a linked list (or another dynamic data structure) of entries that hash to the same index.\n\n"
+      },
+      {
+        "ttft_s": 1.6578809570055455,
+        "latency_s": 3.32939247500326,
+        "output_tokens": 128,
+        "decode_tokens_s": 75.97913543074588,
+        "output": "Designing a reliable background job queue is a critical task for ensuring system stability, scalability, and data integrity. A poorly designed queue can lead to data loss, duplicate processing, or system crashes.\n\nHere is a comprehensive guide to designing a reliable background job queue, covering architecture, reliability mechanisms, and operational best practices.\n\n---\n\n### 1. Core Architectural Principles\n\nA reliable queue must handle **at-least-once** or **exactly-once** delivery semantics, depending on your requirements. Most systems aim for **at-least-once** delivery combined with **idempotency** to achieve effective exactly-on"
+      },
+      {
+        "ttft_s": 1.7851604799943743,
+        "latency_s": 3.1947326039953623,
+        "output_tokens": 128,
+        "decode_tokens_s": 90.0982630385155,
+        "output": "For a real-time multiplayer game, the choice between TCP and UDP is critical and depends heavily on the specific requirements of the game. Here\u2019s a detailed comparison:\n\n### **1. Core Characteristics**\n\n| Feature | TCP (Transmission Control Protocol) | UDP (User Datagram Protocol) |\n| :--- | :--- | :--- |\n| **Reliability** | Guaranteed delivery, in-order, error-checked. | No guarantee of delivery, no ordering, no error checking. |\n| **Connection** | Connection-oriented (3-way handshake). | Connectionless (fire-and-forget). |\n| **Flow Control**"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 8,
+    "repeat": 1,
+    "elapsed_s": 3.381213052998646,
+    "aggregate_tokens_s": 302.8498896547972,
+    "median_decode_tokens_s": 87.2867696836945,
+    "median_ttft_s": 0.8174231634984608,
+    "responses": [
+      {
+        "ttft_s": 0.14822305699635763,
+        "latency_s": 1.3804290120024234,
+        "output_tokens": 128,
+        "decode_tokens_s": 103.06718571196551,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      },
+      {
+        "ttft_s": 0.13877487799618393,
+        "latency_s": 1.719557859993074,
+        "output_tokens": 128,
+        "decode_tokens_s": 80.33993372042124,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long-wavelength and tough. It mostly just goes straight through the atmosphere without getting knocked around much.\n- **Blue light** is like a tiny, bouncy ball"
+      },
+      {
+        "ttft_s": 0.14791990499361418,
+        "latency_s": 1.5686531200044556,
+        "output_tokens": 128,
+        "decode_tokens_s": 89.39046307791916,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, database design, and high-performance computing. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs, followed by a summary table.\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed to the next instruction until the data is read from or written to the disk.\n\n#### \u2705 Advantages\n- **Simplicity:** Code is"
+      },
+      {
+        "ttft_s": 0.1478045870026108,
+        "latency_s": 2.0250901300023543,
+        "output_tokens": 128,
+        "decode_tokens_s": 67.65086988155501,
+        "output": "Dr. Elara Vance had spent the last three years staring at satellite imagery, her eyes burning from the blue light of the monitors. She was a cartographer for the Global Oceanic Survey, tasked with mapping the shifting coastlines of the Pacific. Her job was tedious, repetitive, and often felt like shouting into a void.\n\nBut today, the void shouted back.\n\nIt started as a glitch. A pixelated smudge in the data stream from the new high-resolution LIDAR drones. Elara almost dismissed it as sensor noise, a common artifact in the turbulent waters near the Mariana Trench. But when she ran the"
+      },
+      {
+        "ttft_s": 1.486623270000564,
+        "latency_s": 2.9775297449959908,
+        "output_tokens": 128,
+        "decode_tokens_s": 85.18307628946984,
+        "output": "A hash table is a data structure that maps keys to values using a hash function. Ideally, the hash function produces a unique index for every key. However, in practice, different keys can produce the same index. This is called a **collision**.\n\nTo handle collisions, hash tables employ specific strategies. Below are two of the most common approaches: **Separate Chaining** and **Open Addressing**.\n\n---\n\n### 1. Separate Chaining\n\n**Concept:**\nIn separate chaining, each bucket (index) in the hash table holds a pointer to a linked list (or another collection) of entries. If multiple keys"
+      },
+      {
+        "ttft_s": 1.6658563959936146,
+        "latency_s": 3.241802488992107,
+        "output_tokens": 128,
+        "decode_tokens_s": 80.58651280283448,
+        "output": "Designing a reliable background job queue is a critical task for ensuring system stability, scalability, and data integrity. A poorly designed queue can lead to data loss, duplicate processing, or system crashes.\n\nHere is a comprehensive guide to designing a reliable background job queue, covering architecture, reliability mechanisms, and operational best practices.\n\n---\n\n### 1. Core Architectural Principles\n\nA reliable queue must handle **at-least-once** or **exactly-once** delivery semantics, depending on your requirements. Most systems aim for **at-least-once** delivery combined with **idempotency** to achieve effective exactly-on"
+      },
+      {
+        "ttft_s": 1.8150790439976845,
+        "latency_s": 3.136935713002458,
+        "output_tokens": 128,
+        "decode_tokens_s": 96.07698245802878,
+        "output": "For a real-time multiplayer game, the choice between TCP and UDP is critical and depends heavily on the specific requirements of the game. Here\u2019s a detailed comparison:\n\n### **1. Core Characteristics**\n\n| Feature | TCP (Transmission Control Protocol) | UDP (User Datagram Protocol) |\n| :--- | :--- | :--- |\n| **Reliability** | Guaranteed delivery, in-order, error-checked. | No guarantee of delivery, no ordering, no error checking. |\n| **Connection** | Connection-oriented (3-way handshake). | Connectionless (fire-and-forget). |\n| **Flow Control**"
+      },
+      {
+        "ttft_s": 2.1162750759976916,
+        "latency_s": 3.380416576008429,
+        "output_tokens": 128,
+        "decode_tokens_s": 100.46343704318014,
+        "output": "A database index speeds up lookups by creating a separate, optimized data structure that allows the database engine to find specific rows without scanning the entire table. This is analogous to the index at the back of a textbook: instead of reading every page to find a topic, you look up the topic in the index, which points you directly to the page number.\n\n### How It Works\n\n1. **Without an Index (Full Table Scan)**:\n   - The database must read every row in the table sequentially to find the matching record.\n   - This is slow, especially for large tables, because it requires reading all data from disk"
+      }
+    ]
+  },
+  {
+    "label": "wsl2-native-mtp2-128",
+    "concurrency": 8,
+    "repeat": 2,
+    "elapsed_s": 3.367695815002662,
+    "aggregate_tokens_s": 304.0654667913321,
+    "median_decode_tokens_s": 86.62685618544425,
+    "median_ttft_s": 0.8470390820002649,
+    "responses": [
+      {
+        "ttft_s": 0.1378964010073105,
+        "latency_s": 1.630323720004526,
+        "output_tokens": 128,
+        "decode_tokens_s": 85.09627127794285,
+        "output": "Okay, so imagine sunlight is basically a mix of all the colors of the rainbow\u2014red, orange, yellow, green, blue, indigo, violet. When that light hits Earth\u2019s atmosphere, it runs into tiny gas molecules (mostly nitrogen and oxygen).\n\nHere\u2019s the key part: **blue light scatters way more easily than red light.**\n\nThink of it like this:\n- **Red light** is like a big, heavy truck. It\u2019s long and sturdy, so it mostly just drives straight through the atmosphere without getting bumped around much.\n- **Blue light** is like a tiny, lightweight sports car."
+      },
+      {
+        "ttft_s": 0.14737117900222074,
+        "latency_s": 1.5469771710049827,
+        "output_tokens": 128,
+        "decode_tokens_s": 90.73982301138174,
+        "output": "The choice between **synchronous** and **asynchronous** disk I/O is a fundamental architectural decision in systems programming, database design, and high-performance computing. The tradeoffs revolve around **latency, throughput, complexity, and resource utilization**.\n\nBelow is a detailed comparison of the tradeoffs, followed by a summary table.\n\n---\n\n### 1. Synchronous Disk I/O\n\n**Definition:** The calling thread blocks until the I/O operation completes. The thread cannot proceed to the next instruction until the disk read/write is finished.\n\n#### \u2705 Advantages\n- **Simplicity:** Easy to reason about. The"
+      },
+      {
+        "ttft_s": 1.7670279579906492,
+        "latency_s": 3.3672796899918467,
+        "output_tokens": 128,
+        "decode_tokens_s": 79.36251369725433,
+        "output": "Dr. Elara Vance had spent the last three years staring at satellite imagery, her eyes burning from the blue light of the monitors. She was a cartographer for the Global Oceanic Survey, tasked with mapping the shifting coastlines of the Pacific. Her job was tedious, repetitive, and often thankless. But today, something was different.\n\nA glitch in the data. A smudge on the radar that shouldn\u2019t be there.\n\nIt appeared as a faint, dark cluster in the middle of the South Pacific, far from any known shipping lanes or volcanic activity. The algorithms dismissed it as noise\u2014a reflection of a cloud, a"
+      },
+      {
+        "ttft_s": 1.6974417229939718,
+        "latency_s": 3.1380461509979796,
+        "output_tokens": 128,
+        "decode_tokens_s": 88.15744109294566,
+        "output": "A hash table is a data structure that maps keys to values using a hash function. Ideally, the hash function produces a unique index for every key. However, in practice, different keys can produce the same index. This is called a **collision**.\n\nTo handle collisions, hash tables primarily use two strategies: **Separate Chaining** and **Open Addressing**.\n\n---\n\n### 1. Separate Chaining\n\nIn separate chaining, each bucket (index) in the hash table holds a pointer to a linked list (or another dynamic data structure) of entries that hash to that same index.\n\n#### How it works:\n"
+      },
+      {
+        "ttft_s": 1.546706984998309,
+        "latency_s": 3.225878922006814,
+        "output_tokens": 128,
+        "decode_tokens_s": 75.63251695728927,
+        "output": "Designing a reliable background job queue is a critical task for ensuring system stability, scalability, and data integrity. A poorly designed queue can lead to data loss, duplicate processing, or system crashes.\n\nHere is a comprehensive guide to designing a reliable background job queue, covering architecture, reliability mechanisms, and operational best practices.\n\n---\n\n### 1. Core Architectural Principles\n\nA reliable queue must handle **at-least-once** delivery semantics, **idempotency**, and **failure recovery**.\n\n#### A. Choose the Right Queue Type\n- **Persistent Queue**: Jobs are stored in a durable store (DB, Redis"
+      },
+      {
+        "ttft_s": 0.1471591650042683,
+        "latency_s": 1.436795023997547,
+        "output_tokens": 128,
+        "decode_tokens_s": 98.47741059180791,
+        "output": "For a real-time multiplayer game, the choice between TCP and UDP is critical and depends heavily on the specific requirements of the game. Here\u2019s a detailed comparison:\n\n### **1. Core Characteristics**\n\n| Feature | TCP (Transmission Control Protocol) | UDP (User Datagram Protocol) |\n| :--- | :--- | :--- |\n| **Reliability** | Guaranteed delivery, in-order, error-checked. | No guarantee of delivery, no ordering, no error checking. |\n| **Connection** | Connection-oriented (3-way handshake). | Connectionless (fire-and-forget). |\n| **Flow Control**"
+      },
+      {
+        "ttft_s": 0.14712740598770324,
+        "latency_s": 1.697225432988489,
+        "output_tokens": 128,
+        "decode_tokens_s": 81.93030233431529,
+        "output": "A database index speeds up lookups by creating a separate, optimized data structure that allows the database engine to find specific rows without scanning the entire table. This is analogous to the index at the back of a textbook: instead of reading every page to find a topic, you look up the topic in the index, which points you directly to the page number.\n\n### How It Works\n\n1. **Without an Index (Full Table Scan)**:\n   - The database must read every row in the table sequentially to find the matching record.\n   - This is slow, especially for large tables, because it requires reading all data from disk"
+      },
+      {
+        "ttft_s": 1.775588267002604,
+        "latency_s": 3.0152692929987097,
+        "output_tokens": 128,
+        "decode_tokens_s": 102.44570767545082,
+        "output": "```python\ndef merge_sorted_lists(list1: list, list2: list) -> list:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    Args:\n        list1: First sorted list\n        list2: Second sorted list\n    \n    Returns:\n        A new sorted list containing all elements from both input lists\n    \"\"\"\n    merged = []\n    i, j = 0, 0\n    \n    # Compare elements from both lists and append the smaller one\n    while i < len(list1) and j < len(list2):\n        if list1[i]"
+      }
+    ]
+  }
+]

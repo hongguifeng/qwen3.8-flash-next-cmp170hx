@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- ops/tools/metrics_web.html —— Qwen3.8-Flash-Next /metrics 看板（无外部依赖、无 CDN、无构建）
+     结构与样式都在这个文件里；数据/渲染逻辑在 dashboard.js。
+     主题：data-theme = dark|light，选择记在 localStorage（键 qw-dashboard-theme）。 -->
+<html lang="zh" data-theme="dark"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Qwen3.8-Flash-Next · 引擎指标看板</title>
+<script>
+  /* 在首屏绘制前就把主题定下来，避免“先黑一下再白一下”的闪屏 */
+  try {
+    const t = localStorage.getItem('qw-dashboard-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+<style>
+  :root, [data-theme="dark"]{
+    --bg:#0e1217; --bg-blur:rgba(14,18,23,.88);
+    --surface:#151b22; --surface-2:#1a212a; --track:#232d37;
+    --fg:#e7edf4; --fg-dim:#98a6b4; --fg-faint:#6b7887;
+    --line:#28323d; --line-soft:rgba(40,50,61,.75); --hover:rgba(255,255,255,.035); --stripe:rgba(255,255,255,.022);
+    --ok:#3ecf8e; --bad:#ff5f57; --warn:#e8b339; --acc:#5aa9ff;
+    --acc-soft:rgba(90,169,255,.16); --ok-soft:rgba(62,207,142,.13); --bad-soft:rgba(255,95,87,.12); --warn-soft:rgba(232,179,57,.12);
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+  [data-theme="light"]{
+    --bg:#f2f4f7; --bg-blur:rgba(242,244,247,.9);
+    --surface:#ffffff; --surface-2:#f0f3f6; --track:#dfe4ea;
+    --fg:#1b2530; --fg-dim:#5a6773; --fg-faint:#8a97a4;
+    --line:#d6dce3; --line-soft:rgba(214,220,227,.8); --hover:rgba(20,32,48,.045); --stripe:rgba(20,32,48,.03);
+    --ok:#188a55; --bad:#cc3b32; --warn:#96700a; --acc:#1f6fd0;
+    --acc-soft:rgba(31,111,208,.13); --ok-soft:rgba(24,138,85,.12); --bad-soft:rgba(204,59,50,.1); --warn-soft:rgba(150,112,10,.12);
+    --shadow:0 1px 2px rgba(20,32,48,.08);
+  }
+  :root{
+    --radius:13px;
+    --sans:ui-sans-serif,system-ui,"Segoe UI Variable Text","Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"Cascadia Mono","JetBrains Mono","SF Mono",Consolas,"Noto Sans Mono CJK SC",monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--sans);
+       -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  a{color:var(--acc)}
+  code{font-family:var(--mono);font-size:.92em;background:var(--surface-2);border:1px solid var(--line);
+       border-radius:5px;padding:1px 5px}
+  h3{margin:0;font-size:12.5px;font-weight:650;letter-spacing:.3px;color:var(--fg)}
+
+  /* ---------- 顶栏 ---------- */
+  .topbar{position:sticky;top:0;z-index:6;background:var(--bg-blur);
+          backdrop-filter:blur(12px) saturate(130%);-webkit-backdrop-filter:blur(12px) saturate(130%);
+          border-bottom:1px solid var(--line);padding:10px 18px;
+          display:flex;flex-wrap:wrap;align-items:center;gap:9px 14px}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  h1 .sub{font-size:12px;font-weight:500;color:var(--fg-faint);margin-left:6px}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--fg-faint);flex:none}
+  .dot.ok{background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)}
+  .dot.bad{background:var(--bad);box-shadow:0 0 0 4px var(--bad-soft)}
+  .dot.unk{background:var(--warn);box-shadow:0 0 0 4px var(--warn-soft)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+        padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);
+        color:var(--fg-dim);white-space:nowrap}
+  .pill.ok{color:var(--ok);border-color:var(--ok);background:var(--ok-soft)}
+  .pill.bad{color:var(--bad);border-color:var(--bad);background:var(--bad-soft)}
+  .pill.unk{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+  #status-line{font-size:12px;color:var(--fg-dim);min-width:0}
+  .grow{flex:1 1 40px}
+  .controls{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .ctl{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--fg-dim)}
+  .meta{font:11.5px/1.4 var(--mono);color:var(--fg-faint);white-space:nowrap}
+  .meta b{color:var(--fg-dim);font-weight:600}
+
+  button,select,input[type="search"]{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);
+        border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;cursor:pointer;transition:border-color .12s,background .12s}
+  button:hover{border-color:var(--acc);background:var(--hover)}
+  select{padding-right:22px;appearance:none;
+         background-image:linear-gradient(45deg,transparent 50%,var(--fg-faint) 50%),linear-gradient(135deg,var(--fg-faint) 50%,transparent 50%);
+         background-position:calc(100% - 13px) 55%,calc(100% - 8px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+  input[type="search"]{cursor:text;min-width:180px}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  button.primary{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+  .toggle{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line);
+          border-radius:8px;background:var(--surface-2);font-size:12px;color:var(--fg-dim);cursor:pointer;user-select:none}
+  .toggle input{accent-color:var(--warn);margin:0;cursor:pointer}
+  .toggle.on,.toggle:has(input:checked){border-color:var(--warn);color:var(--warn);background:var(--warn-soft);font-weight:600}
+  .iconbtn{width:30px;padding:5px 0;text-align:center;font-size:13px}
+
+  /* ---------- 错误横幅 ---------- */
+  #err{display:none;margin:12px 18px 0;padding:11px 13px;border:1px solid var(--bad);border-radius:10px;
+       background:var(--bad-soft);font-size:12.5px;line-height:1.5}
+  #err b{color:var(--bad)}
+
+  /* ---------- 布局 ---------- */
+  main{padding:16px 18px 34px;display:grid;gap:14px;max-width:2200px;margin:0 auto}
+  .grid{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);align-items:start}
+  @media(min-width:620px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(min-width:1000px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(min-width:1400px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  @media(max-width:520px){main{padding:12px 10px 26px}.topbar{padding:9px 10px}}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+        padding:13px 15px;box-shadow:var(--shadow);min-width:0}
+  .card.wide{grid-column:1/-1}
+  .hd{display:flex;align-items:center;gap:9px;margin:-1px 0 11px}
+  .hd .badge{margin-left:auto;font:11px/1 var(--mono);color:var(--fg-faint);background:var(--surface-2);
+             border:1px solid var(--line);border-radius:999px;padding:3px 8px;white-space:nowrap}
+  .hd .tag{font-size:10.5px;color:var(--fg-faint);border:1px solid var(--line);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .hint{font-size:11px;color:var(--fg-faint);margin:-6px 0 10px}
+
+  /* ---------- 数值 ---------- */
+  .n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.2px}
+  .n.na{color:var(--fg-faint);font-weight:400}
+  .u{font:11px/1 var(--sans);color:var(--fg-dim);white-space:nowrap;margin-left:4px}
+  .sep{color:var(--fg-faint);padding:0 3px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .dim{color:var(--fg-faint);font-size:11px;font-weight:400}
+
+  /* 键值行：标签在左、数值右对齐；长注释自动掉到下一行，不再把数字挤断 */
+  .kv{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:4px 0;
+      border-bottom:1px dashed var(--line-soft)}
+  .kv:last-child{border-bottom:none}
+  .kv .k{flex:1 1 auto;min-width:0;color:var(--fg-dim);font-size:12.5px}
+  .kv .v{flex:0 1 auto;min-width:0;text-align:right;font-size:12.5px;line-height:1.4}
+  .kv .note{flex:1 1 100%;font-size:11px;color:var(--fg-faint);line-height:1.45}
+  .sec{margin:12px 0 6px;font-size:10.5px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--fg-faint)}
+  .sec:first-child{margin-top:0}
+
+  /* 大号仪表值 */
+  .big{padding:5px 0 9px}
+  .big .bl{font-size:10.5px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--fg-dim)}
+  .big .mv{font:600 27px/1.1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.8px;margin-top:4px}
+  .big .mu{font:12px/1 var(--sans);font-weight:500;color:var(--fg-dim);margin-left:7px;letter-spacing:0}
+  .big .note{font-size:11px;color:var(--fg-faint);margin-top:5px;line-height:1.45}
+
+  /* ---------- KPI 条 ---------- */
+  .kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(158px,1fr))}
+  .kpi{background:var(--surface-2);border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+       display:flex;flex-direction:column;gap:8px;min-width:0}
+  .kpi .kl{font-size:10.5px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--fg-dim)}
+  .kpi .mv{font:600 23px/1.05 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.7px}
+  .kpi .mu{font:11px/1 var(--sans);font-weight:500;color:var(--fg-dim);margin-left:5px;letter-spacing:0}
+  .kpi .foot{font-size:10.5px;color:var(--fg-faint);margin-top:auto;line-height:1.4}
+
+  /* ---------- 迷你曲线 ---------- */
+  .chart{display:block;width:100%;height:44px;margin-top:auto}
+  .chart .area{fill:var(--acc-soft);stroke:none}
+  .chart .line{fill:none;stroke:var(--acc);stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;
+               vector-effect:non-scaling-stroke}
+  .chart .cursor{stroke:var(--acc);stroke-width:1;stroke-dasharray:3 3;opacity:.5;vector-effect:non-scaling-stroke}
+  .chart .base{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+  .chart.idle .line{stroke:var(--fg-faint)}
+  .chart.idle .area{fill:none}
+  .chart .idle{fill:none;stroke:var(--fg-faint);stroke-width:1.4;stroke-dasharray:4 4;opacity:.55;vector-effect:non-scaling-stroke}
+  .card .chart{margin-top:6px}
+  .cap{font:10.5px/1.35 var(--mono);color:var(--fg-faint);letter-spacing:-.1px}
+  .cap b{color:var(--fg-dim);font-weight:600}
+
+  /* ---------- 进度条 ---------- */
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--track);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:5px;background:var(--acc);transition:width .35s ease}
+  .bar.ok i{background:var(--ok)} .bar.warn i{background:var(--warn)} .bar.bad i{background:var(--bad)}
+  .bar .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--fg-faint);opacity:.4}
+  .barrow{display:flex;align-items:center;gap:9px;margin-top:7px}
+  .barrow .bar{flex:1 1 auto;min-width:0}
+  .barrow .pctv{flex:none;font:12px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--fg-dim)}
+
+  /* ---------- 三列小表 ---------- */
+  .trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 2px}
+  .trio .cell{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:7px 8px;min-width:0}
+  .trio .cl{font-size:10px;font-weight:650;letter-spacing:.5px;text-transform:uppercase;color:var(--fg-faint);
+            line-height:1.25;overflow-wrap:break-word}
+  .trio .cv{font:600 16px/1.15 var(--mono);font-variant-numeric:tabular-nums;margin-top:5px;letter-spacing:-.4px}
+  .trio .cs{font-size:10.5px;color:var(--fg-faint);margin-top:3px}
+
+  /* ---------- 表格 ---------- */
+  .tblwrap{overflow-x:auto;margin-top:9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}
+  table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .tbl th{text-align:left;color:var(--fg-faint);font:600 10.5px/1.3 var(--sans);letter-spacing:.6px;
+          text-transform:uppercase;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;
+          position:sticky;top:0;background:var(--surface-2);z-index:1}
+  .tbl td{padding:5px 9px;border-bottom:1px solid var(--line-soft)}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tbl tbody tr:nth-child(even){background:var(--stripe)}
+  .tbl tbody tr:hover{background:var(--hover)}
+  .tbl .lbl{font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);overflow-wrap:break-word}
+
+  /* ---------- 折叠区 ---------- */
+  details{margin-top:9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);overflow:hidden}
+  details summary{cursor:pointer;padding:8px 11px;font-size:12px;color:var(--fg-dim);list-style:none;
+                  display:flex;align-items:center;gap:8px;user-select:none}
+  details summary::-webkit-details-marker{display:none}
+  details summary::before{content:"▸";font-size:10px;color:var(--fg-faint);transition:transform .15s ease}
+  details[open]>summary::before{transform:rotate(90deg)}
+  details summary:hover{color:var(--fg);background:var(--hover)}
+  details[open]>summary{color:var(--fg);border-bottom:1px solid var(--line)}
+  .dbody{padding:10px 12px}
+  .scroll{max-height:430px;overflow:auto}
+  pre.raw{max-height:420px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+          padding:10px;font:11px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+  .filterrow{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .filterrow .count{font:11px/1 var(--mono);color:var(--fg-faint);white-space:nowrap}
+
+  footer{padding:0 18px 26px;color:var(--fg-faint);font-size:11.5px;line-height:1.75;max-width:2200px;margin:0 auto}
+  footer b{color:var(--fg-dim)}
+  kbd{font:11px/1 var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+      padding:2px 5px;background:var(--surface-2);color:var(--fg-dim)}
+</style></head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="dot unk" id="dot" title="引擎健康状态"></span>
+    <h1>Qwen3.8-Flash-Next<span class="sub">引擎指标看板</span></h1>
+  </div>
+  <span class="pill unk" id="pill">初始化…</span>
+  <span id="status-line">正在连接看板…</span>
+  <span class="grow"></span>
+  <span class="meta" id="meta"></span>
+  <div class="controls">
+    <span class="ctl">刷新
+      <select id="interval" title="自动抓取间隔">
+        <option value="2">2 s</option><option value="5" selected>5 s</option>
+        <option value="10">10 s</option><option value="30">30 s</option><option value="0">手动</option>
+      </select></span>
+    <label class="toggle" id="pause-lbl"><input type="checkbox" id="pause"> 暂停</label>
+    <button class="primary" id="refresh" title="快捷键 R">立即抓取</button>
+    <button class="iconbtn" id="theme" title="切换深色 / 浅色（快捷键 T）">◐</button>
+  </div>
+</header>
+
+<div id="err"><b>抓不到指标。</b> 看板继续显示最后一次成功的数据（数字会停住不动）。
+  常见原因：引擎没跑（<code>bin/start.sh</code>）、或看板进程与引擎不在同一台机器 / 端口不通。
+  看板本身不重启、不压测引擎。</div>
+
+<main>
+  <section class="card wide" id="c-kpi">载入中…</section>
+
+  <div class="grid">
+    <section class="card" id="c-throughput"></section>
+    <section class="card" id="c-latency"></section>
+    <section class="card" id="c-spec"></section>
+    <section class="card" id="c-kv"></section>
+    <section class="card" id="c-requests"></section>
+    <section class="card" id="c-cache"></section>
+    <section class="card" id="c-process"></section>
+    <section class="card" id="c-config"></section>
+  </div>
+
+  <section class="card wide" id="c-raw">
+    <div class="hd"><h3>原始指标</h3>
+      <span class="tag">只读，来自 /metrics</span>
+      <span class="grow"></span>
+      <span class="filterrow">
+        <input type="search" id="raw-filter" placeholder="过滤指标名 / 标签，例如 spec_decode" autocomplete="off">
+        <span class="count" id="raw-count">—</span>
+      </span>
+    </div>
+    <details id="raw-det"><summary>展开 vllm:* 明细表</summary>
+      <div class="dbody"><div class="tblwrap scroll" id="raw-body"></div></div>
+    </details>
+    <details id="raw-orig"><summary>展开上游原文</summary>
+      <div class="dbody"><pre class="raw" id="raw-orig-body"></pre></div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  数据全部来自引擎的 <code>/metrics</code>（Prometheus 文本格式），经看板进程同源转发，全程只读。<br>
+  速率是 <b>两次抓取之间 counter 的差分</b>；counter 从引擎启动累计，重启即归零 —— 出现「已归零」就是引擎重启过。<br>
+  分位数用直方图桶线性插值，统计窗口只有抓取间隔那么长；空闲期的“—”是<b>真的没有请求</b>，不是看板坏了。<br>
+  快捷键：<kbd>R</kbd> 立即抓取 · <kbd>P</kbd> 暂停/恢复 · <kbd>T</kbd> 切换深浅主题 · <kbd>1</kbd>…<kbd>4</kbd> 切换抓取间隔。
+</footer>
+
+<script src="/dashboard.js"></script>
+</body></html>

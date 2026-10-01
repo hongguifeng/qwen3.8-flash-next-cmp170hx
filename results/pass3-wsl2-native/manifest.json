@@ -1,0 +1,71 @@
+{
+  "pass": "pass3-wsl2-native",
+  "date_utc": "2026-09-29T11:39:50Z",
+  "deployment": "native vLLM inside WSL2 (no Docker container)",
+  "host": {
+    "os": "Windows 11 24H2 (26100.4061)",
+    "ram_gb": 88,
+    "wsl": "WSL 2.7.11.0, kernel 6.18.33.2, networkingMode=mirrored, processors=16",
+    "desktop_gpu": "Radeon RX550 @ 3840x2160 (display only, separate driver)",
+    "compute_gpu": "NVIDIA Graphics Device, 65536 MiB, 616.92, 8.0"
+  },
+  "model": {
+    "path": "/home/hong/models/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP",
+    "served_name": "Qwen3.8-Flash-Next",
+    "checkpoint_gb": 143,
+    "note": "AutoRound 3bpw + MTP; 102.4 GB PLE table read from SSD via O_DIRECT+AIO"
+  },
+  "runtime": {
+    "vllm": "0.29.1rc1.dev402+ga5a30471f.ple1",
+    "torch": "2.13.0+cu130",
+    "triton": "3.7.1",
+    "python": "3.12 (uv-managed CPython, vllm-native/opt/vllm/.venv)",
+    "patches": [
+      "patches/qwen38-ple-ssd.patch (upstream project patch, 1345 lines)",
+      "ops/patches/qsa-alloc-heal.patch (local allocator healer, 65 lines)"
+    ]
+  },
+  "serve_args": [
+    "--served-model-name",
+    "--host",
+    "--port",
+    "--dtype",
+    "--max-model-len",
+    "--max-num-seqs",
+    "--max-num-batched-tokens",
+    "--gpu-memory-utilization",
+    "--safetensors-load-strategy",
+    "--mamba-cache-mode",
+    "--enable-prefix-caching",
+    "--enable-chunked-prefill",
+    "--reasoning-parser",
+    "--enable-auto-tool-choice",
+    "--tool-call-parser",
+    "--additional-config",
+    "{\"ple_ssd_offload\":true,\"ple_ssd_workers\":16,\"ple_ssd_cache_mb\":512,\"ple_ssd_native_library\":\"/home/hong/code/qwen3.8-flash-next-cmp170hx/vllm-native/opt/vllm/optimization/ple_ssd_io.so\",\"ple_ssd_io_depth\":256,\"ple_ssd_prefetch_tokens\":16384}",
+    "--compilation-config",
+    "{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,20,22,24,26,28,30,32,64,128,256,512,1024,2048]}",
+    "--speculative-config",
+    "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"
+  ],
+  "env_knobs": {
+    "VLLM_WSL2_ENABLE_PIN_MEMORY": "1",
+    "VLLM_USE_BREAKABLE_CUDAGRAPH": "1",
+    "QSA_ALLOC_HEAL": "1",
+    "QSA_ALLOC_HEAL_FREE_MB": "384",
+    "QSA_ALLOC_HEAL_CACHED_MB": "256",
+    "OMP_NUM_THREADS": "1",
+    "HF_HUB_OFFLINE": "1"
+  },
+  "artifacts": [
+    "final-wsl2-bench.json",
+    "final-wsl2-long-bench.json",
+    "final-wsl2-prefill.json",
+    "final-wsl2-smoke.json"
+  ],
+  "notes": [
+    "Values are single-machine measurements; decode throughput is content-dependent through MTP acceptance (see docs/RESULTS-WSL2.md).",
+    "Decode comparisons require >=2500 warmup tokens and a deflated WSL memory balloon (vmmemWSL < 32 GB).",
+    "Windows clients must use 127.0.0.1, not localhost (mirrored networking does not forward the IPv6 loopback)."
+  ]
+}

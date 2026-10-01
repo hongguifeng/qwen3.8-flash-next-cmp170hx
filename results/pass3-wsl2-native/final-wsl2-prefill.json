@@ -1,0 +1,170 @@
+[
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 512,
+    "repeat": 0,
+    "latency_s": 0.3695436330017401,
+    "prompt_tokens_s": 1385.4926841550782,
+    "usage": {
+      "prompt_tokens": 512,
+      "total_tokens": 513,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 512,
+    "repeat": 1,
+    "latency_s": 0.1949809570069192,
+    "prompt_tokens_s": 2625.8974612676197,
+    "usage": {
+      "prompt_tokens": 512,
+      "total_tokens": 513,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 512,
+    "repeat": 2,
+    "latency_s": 0.2660310740029672,
+    "prompt_tokens_s": 1924.5872006451748,
+    "usage": {
+      "prompt_tokens": 512,
+      "total_tokens": 513,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 2048,
+    "repeat": 0,
+    "latency_s": 0.7142952229914954,
+    "prompt_tokens_s": 2867.1618318024002,
+    "usage": {
+      "prompt_tokens": 2048,
+      "total_tokens": 2049,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 2048,
+    "repeat": 1,
+    "latency_s": 0.6866280599933816,
+    "prompt_tokens_s": 2982.691968661666,
+    "usage": {
+      "prompt_tokens": 2048,
+      "total_tokens": 2049,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 2048,
+    "repeat": 2,
+    "latency_s": 0.6928437839960679,
+    "prompt_tokens_s": 2955.9332815081198,
+    "usage": {
+      "prompt_tokens": 2048,
+      "total_tokens": 2049,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 8192,
+    "repeat": 0,
+    "latency_s": 2.1843618160055485,
+    "prompt_tokens_s": 3750.294452125321,
+    "usage": {
+      "prompt_tokens": 8192,
+      "total_tokens": 8193,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 8192,
+    "repeat": 1,
+    "latency_s": 2.3995926000061445,
+    "prompt_tokens_s": 3413.912845030037,
+    "usage": {
+      "prompt_tokens": 8192,
+      "total_tokens": 8193,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 8192,
+    "repeat": 2,
+    "latency_s": 2.1583653959969524,
+    "prompt_tokens_s": 3795.4648527971335,
+    "usage": {
+      "prompt_tokens": 8192,
+      "total_tokens": 8193,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 32768,
+    "repeat": 0,
+    "latency_s": 10.262122213011025,
+    "prompt_tokens_s": 3193.10171130631,
+    "usage": {
+      "prompt_tokens": 32768,
+      "total_tokens": 32769,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 32768,
+    "repeat": 1,
+    "latency_s": 10.621733104999294,
+    "prompt_tokens_s": 3084.9956100457093,
+    "usage": {
+      "prompt_tokens": 32768,
+      "total_tokens": 32769,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  },
+  {
+    "label": "wsl2-native-mtp2-prefill",
+    "prompt_tokens": 32768,
+    "repeat": 2,
+    "latency_s": 10.40433556700009,
+    "prompt_tokens_s": 3149.45628089234,
+    "usage": {
+      "prompt_tokens": 32768,
+      "total_tokens": 32769,
+      "completion_tokens": 1,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    }
+  }
+]

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Wait for the checkpoint download, then start the patched vLLM container.
+set -euo pipefail
+
+MODEL_DIR="${MODEL_DIR:-$HOME/models/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP}"
+IMAGE="${IMAGE:-18gogogo/170hx1-qwen38nextf:sm80}"
+NAME="${NAME:-hong-pc}"
+PORT="${PORT:-9393}"
+LOG="${LOG:-$HOME/vllm/fdl.log}"
+MARKER="$HOME/vllm/download-complete"
+
+if [[ ${1:-} != --now ]]; then
+    echo "Waiting for the model download to finish (marker: $MARKER)..."
+    while [[ ! -f "$MARKER" ]]; do
+        sleep 60
+        if grep -q "^ALL DONE" "$LOG" 2>/dev/null; then break; fi
+    done
+fi
+
+echo "Verifying checkpoint in $MODEL_DIR"
+python3 - "$MODEL_DIR" <<'PY'
+import os, sys
+d = sys.argv[1]
+parts = [f for f in os.listdir(d) if f.endswith((".part", ".incomplete"))]
+if parts:
+    sys.exit(f"incomplete files remain: {parts[:3]}")
+shards = sorted(f for f in os.listdir(d) if f.endswith(".safetensors"))
+total = sum(os.path.getsize(os.path.join(d, f)) for f in shards)
+print(f"{len(shards)} safetensors files, {total/2**30:.2f} GiB")
+if len(shards) != 13:
+    sys.exit(f"expected 13 safetensors files, found {len(shards)}")
+PY
+
+# PROFILE=1 exposes the torch profiler (/start_profile, /stop_profile) inside
+# the container, writing kineto traces to ~/vllm/prof.  The entrypoint wrapper
+# adds the marker-gated --profiler-config flag the image entrypoint lacks; the
+# profiler itself only records while /start_profile has been called.
+PROFILE_ARGS=()
+if [[ "${PROFILE:-0}" == 1 ]]; then
+    PROFILE_ARGS=(--entrypoint /prof_enable.sh
+                  -v "$HOME/vllm/prof:/prof"
+                  -v "$HOME/vllm/enable_profiler_entrypoint.sh:/prof_enable.sh:ro")
+fi
+
+docker rm -f "$NAME" >/dev/null 2>&1 || true
+# This WSL2 host exposes the GPUs through CDI (the legacy nvidia runtime hook
+# hangs), so pass the CDI device instead of --gpus.
+#
+# VLLM_WSL2_ENABLE_PIN_MEMORY=1 is REQUIRED for performance here.  Without it
+# vllm.platforms.cuda.CudaPlatformBase.is_pin_memory_available() returns False
+# on WSL2, so is_uva_available() is False and every UvaBufferPool becomes a
+# NonUvaBuffer (pageable): each copy_to_uva() then does a synchronous
+# CPU->GPU copy (48us for 16B, 473us for 1MiB) instead of publishing a
+# zero-copy UVA view (1.6us / 25us).  During decode that was ~76% of
+# EngineCore CPU and cost ~15ms per step.
+exec docker run -d \
+    --name "$NAME" \
+    --device nvidia.com/gpu=all \
+    -e CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
+    --ipc host \
+    -p "${PORT}:8000" \
+    -e QWEN_CONTEXT="${QWEN_CONTEXT:-262144}" \
+    -e QWEN_SEQS="${QWEN_SEQS:-4}" \
+    -e QWEN_BATCH_TOKENS="${QWEN_BATCH_TOKENS:-2048}" \
+    -e QWEN_GPU_MEMORY="${QWEN_GPU_MEMORY:-0.96}" \
+    -e QWEN_MTP="${QWEN_MTP:-1}" \
+    -e VLLM_WSL2_ENABLE_PIN_MEMORY="${VLLM_WSL2_ENABLE_PIN_MEMORY:-1}" \
+    "${PROFILE_ARGS[@]}" \
+    -v "${MODEL_DIR}:/model:ro" \
+    --restart no \
+    "$IMAGE"
