@@ -17,7 +17,8 @@
   - `vllm-native/` = 运行时（venv + 已打补丁的 vLLM 源码 + Triton 缓存 + 日志）
   - `bin/` = 日常入口：`start.sh` / `stop.sh` / `status.sh` / `logs.sh` / `bench.sh` / `drop_host_cache.sh`
   - `ops/` = 工具、证据、补丁、Docker 回退件、`OPS.md`（全部排查记录）
-  - `docs/RESULTS-WSL2.md` = 本机性能数据；`docs/SCRIPTS.md` = **脚本总览/调用链/新增脚本约定**；`results/pass3-wsl2-native/` = 原始 JSON
+  - `docs/RESULTS-WSL2.md` = 本机性能数据；`docs/SCRIPTS.md` = **脚本总览/调用链/新增脚本约定**；
+  `docs/DEPLOY-WSL2.md` = **部署与恢复手册**（前置条件、8 步部署、验收基线、故障排查表）；`results/pass3-wsl2-native/` = 原始 JSON
 - **接口**：`http://127.0.0.1:8000/v1`（引擎直接监听 8000），模型名 `Qwen3.8-Flash-Next`。
   历史上曾用 9393 + 一个 `:8000→:9393` 转发器，2026-10-01 已把端口统一为 8000 并删除转发层（`ops/OPS.md §9.32`）。
 
@@ -144,6 +145,8 @@ ops/tools/consult.sh <brief.md> 10 --wait    # 前台等（带进度）+ 结果�
 ```bash
 ./start.sh                   # 启动（根目录入口，薄封装 bin/start.sh；等就绪 250~320 s）
 bin/start.sh                 # 同上（等价）；--wait/--keep-cache/--foreground 都支持
+./deploy.sh check            # 部署/环境自检（只读）：环境/GPU/内存/磁盘/模型/运行时/补丁/服务
+./deploy.sh verify           # 验收：health=200 + 新鲜 2048 预填对比基线（判读见 docs/DEPLOY-WSL2.md §5）
 bin/status.sh                # 健康 / 请求 / 显存 / 宿主内存 / MTP 接受率（--watch 5 刷新、--short 单行）
 bin/logs.sh -f               # 跟踪日志（-e 错误 / --startup 启动行 / --heal 内存治愈 / --list 归档）
 bin/bench.sh                 # 体检 + 自动存档到 ops/measurements/perf-history.csv

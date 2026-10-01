@@ -54,6 +54,7 @@ QWEN_MTP=1 ./start.sh            # ② 临时覆盖一次（不改文件）
 | 脚本 | 职责 | 常用 |
 |---|---|---|
 | `./start.sh` | 根入口，等价于 `bin/start.sh` | `./start.sh`、`--params`、`--keep-cache` |
+| `./deploy.sh` | 根入口 → `ops/deploy/deploy_wsl2.sh`：**部署/自检**（默认只读） | `check`、`check --json`、`verify`、`plan`、`install --yes` |
 | `bin/start.sh` | 启动 + 等就绪 + 回收宿主内存 | `--wait 900`、`--foreground` |
 | `bin/stop.sh` | 优雅停止（SIGTERM，60 s；**默认绝不 SIGKILL**） | `--check`（先跑这个！） |
 | `bin/status.sh` | 健康/进程/请求/KV/MTP 接受率/宿主内存 | `--short`（脚本友好）、`--watch 5` |
@@ -67,6 +68,10 @@ QWEN_MTP=1 ./start.sh            # ② 临时覆盖一次（不改文件）
 |---|---|
 | `vllm-native/bin/run_native.sh` | **唯一**直接调用 `vllm serve` 的脚本：`start/stop/restart/status/print-cmd/params/foreground` |
 | `config/engine.env` | 参数默认值（唯一来源） |
+| `ops/deploy/deploy_wsl2.sh` | 部署/自检：`check`（只读体检，含端口一致性比对）/`plan`/`install`/`start`(→`bin/start.sh`)/`verify`/`all`；文档见 `docs/DEPLOY-WSL2.md` |
+
+`deploy.sh check` 的检查项名字就是文档里的锚点（`host.*`、`disk.space`、`model.*`、`runtime.*`、`patch.*`、`ple.lib`、`cache.triton`、`config.*`、`service.health`），
+FAIL 时每条都带「→ 修复」；`deploy.sh verify` 用 `ops/bench/warmup.py`（新鲜 token id）取 2048 稳态预填并对比基线。
 
 新增的 `print-cmd` 是**干跑**：只打印将执行的命令行，不启动任何东西。
 改完脚本拿它和线上进程逐项比对，是验证"重构没改语义"的最便宜办法：
