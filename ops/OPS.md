@@ -2024,3 +2024,110 @@ asyncio.run(main())
 * 两台 GPU 的 220 W 上限对解码路径无影响（实测忙时 ≤ 204 W）；对长预填有瞬时限功，但没造成可见损失。
 * 与"性能变化"相比，**更值得注意的是驱动 KMD 从 616.92 变成 610.88**（`DEPLOY-WSL2.md` 写的前置条件是 ≥616.92）。
   当前部署工作正常，但这条前置条件的措辞需要与现状对齐（待用户确认是否为有意的降级）。
+
+---
+
+## 9.34 功耗上限 A/B：220 W ⇄ 250 W（2026-10-01 19:46–20:05）
+
+### 9.34.1 用户要求
+> "你能不能把显卡功耗改回250w再重新测一轮看看" → 之后 `> 改回 220w 吧`
+
+### 9.34.2 改功耗上限必须先提权（两种 nvidia-smi 都会拒绝）
+* WSL 侧：`nvidia-smi -i 0 -pl 250` ⇒ `Failed to set power management limit … Insufficient Permissions`（且 `sudo` 需要密码）。
+* Windows 侧：`/mnt/c/Windows/System32/nvidia-smi.exe -i 0 -pl 250` ⇒ 同样报错，rc=4。
+* **可行做法**（本次用的）：把命令写成 `%TEMP%\set-plXXX.cmd`，再从 WSL 用
+  `powershell.exe -NoProfile -Command "Start-Process -FilePath '<cmd>' -Verb RunAs -Wait"`
+  触发 **UAC 弹窗**（需用户在 Windows 桌面点"是"），结果写到 `%TEMP%\plXXX-result.txt` 回来读。
+* 改功耗**不需要重启引擎**（对运行中的进程即时生效），所以这轮 A/B 没有付 4~5 分钟的停机代价。
+* 改的是**两张卡**（`-i 0` 与 `-i 1`）：本机 GPU1 是用户另一个项目
+  （`D:\code\vllm-windows`，见 §9.34.4）在用的，改完要恢复原值。
+
+### 9.34.3 结果：250 W 与 220 W 的差异在轮间波动之内
+同一引擎进程、同一协议（`bin/bench.sh --full`，新鲜 token id）：
+
+| 指标 | 220 W（18:39，reps=2） | 250 W 第一轮（19:47，reps=3） | 250 W 干净轮（19:52，reps=3） |
+| --- | --- | --- | --- |
+| 预填 2048 | 0.653 s | **1.092 s ❌** | 0.711 s |
+| 预填 8192 | 2.225 s | **3.042 s ❌** | 2.172 s |
+| 预填 131072 | 48.66 / 49.00 s | 50.61 / 50.76 / 51.58 s | 49.37 / 49.46 / 50.48 s |
+| 后置 2048 | 0.653 s | 0.716 s | 0.711 s |
+| 解码步时 p50 | 17.3~17.7 ms | 18.0~18.5 ms | 17.7 / 17.9 / 18.1 / 18.6 ms |
+| 忙时功耗 均值/峰值 | 171 / 313 W | — | 184 / 308 W |
+| SW Power Cap 命中 | 28 % 采样 | — | 29 % 采样 |
+
+**结论**：干净对比下 250 W 只慢 1.4~2 %（131072 中位 49.46 vs 48.83 s），
+而同设置下的轮间波动本身就有 1~4 % ⇒ **判定"无差异"**。用户选择恢复 220 W。
+（顺带否证了"功耗上限决定本机性能"这一猜想：解码忙时峰值只到 204 W / 250 W，长预填峰值 308~313 W
+在两种上限下**都**触发 SW Power Cap，SM 峰值两种设置都是 1485 MHz。）
+
+### 9.34.4 **第一轮为什么是废数据**：宿主机上同时起了第二个引擎
+* 19:37:01 Windows 侧出现一个新进程（uv 的 CPython 3.12.13）：
+  ```
+  python -u -m vllm.entrypoints.openai.api_server --model D:\models\Qwen3.8-Flash-Next-AutoRound-3bpw-MTP \
+    --served-model-name qwen3.8-flash-next-full --host 127.0.0.1 --port 9393 … --gpu-memory-utilization 0.94 \
+    --speculative-config {"method":"mtp","num_speculative_tokens":2}   # 启动器 D:\code\vllm-windows\start_qwen38_flash_next.ps1，默认 -Gpu 1
+  ```
+  即**用户另一个项目（Windows 原生 vLLM 移植版）**，同模型、同参数、**GPU1**、`:9393`，`/health` = 200。
+* 它占 GPU1 63 641 MiB（我们引擎占 GPU0 63 387 MiB，各一张卡，**不冲突**），
+  但**启动阶段要从同一块 NVMe（D:）读 143 GB 权重**——而我们的预填瓶颈正是 PLE 表的 SSD 直读。
+* 时间线：19:37 它启动 → 19:46 我改功耗（UAC + Windows 侧 cmd/nvidia-smi）→ 19:47:36 第一轮测量（短预填慢 60 %）
+  → 19:52 第二轮正常。⇒ **第一轮"变慢"最可能是第二个引擎的加载期 + 我自己的 UAC/宿主活动叠加**，
+  与功耗上限无关（功耗上限对短预填根本没有作用空间）。
+* 同时发现了本次会话里的**两个测量陷阱**（都能让短预填虚高 40~60 %）：
+  1. 刚跑完 `bin/drop_host_cache.sh` 就开测：vmmemWSL 从 44.1 GB 往 12.7 GB 收缩的窗口里，宿主在忙着换页；
+     而且该脚本**当场打印的就是 44.1 GB**（收缩尚未完成），读数本身也误导。
+  2. 宿主上**有另一个引擎在加载权重**（读同一块 NVMe）。
+  ⇒ 测预填前必须确认：`vmmemWSL` 已稳定（<32 GB）、Windows 侧没有别的 vLLM/训练进程在启动。
+* 校验方法（只读，不改动对方进程）：`nvidia-smi.exe --query-gpu=index,memory.used,utilization.gpu,power.draw`、
+  `Get-CimInstance Win32_Process -Filter "name like '%python%'"`、`Invoke-WebRequest http://127.0.0.1:9393/health`。
+
+### 9.34.5 收尾状态（验证过）
+* 两卡功耗上限已恢复 **220 W**（`nvidia-smi` 实测；default 250 / max 300 未变），显存 1728 MHz 未动。
+* 引擎**全程未重启**：`health=200`、`bin/status.sh` 正常，且期间用户自己的客户端一直在正常调用
+  （日志 `POST /v1/responses 200 OK`，`num_requests_running=1`）。
+* 收尾实测：新鲜 2048 预填 **0.718 s**（基线 0.64~0.73）⇒ 状态可用。
+* 存档：`ops/measurements/perf-history.csv` 的 `pl250-mem1728-full`（废）/ `pl250-mem1728-full-r2`（干净）。
+
+---
+
+## 9.35 顺手测：Windows 原生 vLLM（GPU1，:9393）vs 本仓 WSL2 原生（GPU0，:8000）（2026-10-01 20:1x）
+
+### 9.35.1 被测对象
+用户另一个项目 `D:\code\vllm-windows` 的 Windows 原生 vLLM（`start_qwen38_flash_next.ps1` 默认 `-Gpu 1`）：
+同模型（`D:\models\Qwen3.8-Flash-Next-AutoRound-3bpw-MTP`）、同核心参数
+（`max-model-len 262144 / max-num-seqs 4 / max-num-batched-tokens 2048 / gpu-memory-utilization 0.94 /
+MTP=2 / PLE SSD offload`，PLE 走 Windows 版 `ple_ssd_io_win.dll`），served name `qwen3.8-flash-next-full`，监听 `:9393`。
+**只发 HTTP 请求，不碰它的进程。**
+
+### 9.35.2 方法（与我们的协议完全一致，可直接对比）
+* 预填：`BASE_URL=http://127.0.0.1:9393 QWEN_SERVED_NAME=qwen3.8-flash-next-full python3 ops/bench/warmup.py --reps 3 2048 8192 32768`（每次全新 token id）。
+* 解码：同一个 `ops/bench/dec_bench.py`（本次把里面硬编码的模型名改成 `_cfg.model_name()`，见 §9.35.4）。
+* 并发：`benchmarks/bench_server.py --url http://127.0.0.1:9393 --model qwen3.8-flash-next-full --concurrency 1 4 --tokens 128 --rounds 2`。
+* 期间我们的引擎（GPU0）确认空闲（`num_requests_running=0`），GPU1 侧用 `nvidia-smi -i 1` 采样 250 ms 一次。
+* ⚠️ 反向注意：测对方时**我们的引擎必须空闲**，否则两个引擎都读同一块 NVMe，两边数字都会失真。
+
+### 9.35.3 结果
+| 指标 | Windows 原生（GPU1，:9393） | 本仓 WSL2 原生（GPU0，:8000） | 倍数 |
+| --- | --- | --- | --- |
+| 预填 2048 | **4.35 s**（471 tok/s） | 0.70~0.72 s（~2 900 tok/s） | **6.1× 慢** |
+| 预填 8192 | **15.78 s**（519 tok/s） | 2.17~2.23 s（~3 700 tok/s） | **7.2× 慢** |
+| 预填 32768 | **67.63 s**（485 tok/s） | 12.69~12.74 s（2 582 tok/s，同日实测） | **5.3× 慢** |
+| 解码步时 p50 | 21.8~24.3 ms | 17.3~17.7 ms | 1.3× 慢 |
+| 解码 tok/s | 89.6~96.4 | 118~129 | 1.3× |
+| TTFT | 75~84 ms | 62~72 ms | 1.2× |
+| 并发 1（128 tok）聚合 / 单流解码 | 85.3~106.3 / 101~129 tok/s | 115.9~144.3 / 127~157 tok/s | 1.3× |
+| 并发 4（128 tok）聚合 / 单流解码 | **63.9~80.6 / 17.4~21.8 tok/s** | 277.6~319.8 / 83~90 tok/s | **约 4× / 4.5×** |
+| MTP 接受率 | 52~64 %（累计 65.3 %） | 58~68 % | 相当 |
+| 忙时功耗 / SM 时钟 | 均值 123 W / 均值 1 260 MHz（峰值 230 W、1 485 MHz） | 均值 177 W / 均值 1 478 MHz | — |
+
+### 9.35.4 三条可判读的结论（含一条顺手改的代码）
+1. **预填是 5~7 倍差距，且 GPU 明显没吃满**（忙时均值只有 123 W、SM 1 260 MHz）⇒ 瓶颈在**Windows 侧的 PLE/SSD 读路径**，不是 GPU 算力。
+   这与我们这边"预填瓶颈是 PLE 表 SSD 直读"的结论一致，只是 Windows 那条路径慢得多（`ple_ssd_io_win.dll` + Windows I/O 栈 vs `O_DIRECT` + 原生 AIO）。
+2. **解码只慢 1.3×**（21.8~24.3 ms vs 17.3~17.7 ms）⇒ 单步的 Windows/WDDM 提交开销是百微秒级，不足以解释预填的 6 倍差。
+3. **并发 4 几乎不涨反降**（聚合 63.9~80.6 tok/s，还不如单流的 85~106）⇒ 对方引擎在并发下**没有获得批处理收益**（我们这边并发 4 能到 ~300 tok/s）。
+   最值得先查的是它的调度/缓存配置（`--kv-cache-memory-bytes 15032385536`、`--mamba-cache-mode align`），
+   以及是否真的在连续批处理 —— 这条与功耗/时钟无关。
+4. 顺手改的代码：`ops/bench/dec_bench.py` 里请求体的 `model` 原本硬编码 `Qwen3.8-Flash-Next`，
+   改成 `_cfg.model_name()`（环境变量优先），这样同一个解码协议能指向任意 served model；
+   另外 `warmup.py` 的 `--url` **不会自动补 `/v1/completions`**（传 `http://127.0.0.1:9393` 会 404），要用
+   `BASE_URL=… QWEN_SERVED_NAME=… warmup.py` 这种环境变量写法。

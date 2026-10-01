@@ -15,7 +15,7 @@ def disk():
         if re.match(r'^(sd[a-z]|vd[a-z]|nvme\d+n\d+)$',f[2]): o[f[2]]=int(f[7])
     return o
 def run(n,tag,prompt="请详细说明 vLLM 中 PagedAttention 的工作原理。"):
-    body=json.dumps({"model":"Qwen3.8-Flash-Next","prompt":prompt,"max_tokens":n,"temperature":0.6,
+    body=json.dumps({"model":_cfg.model_name(),"prompt":prompt,"max_tokens":n,"temperature":0.6,
         "ignore_eos":True,"stream":True,"stream_options":{"include_usage":True}}).encode()
     req=urllib.request.Request(M+"/v1/completions",body,{"Content-Type":"application/json"})
     m0=met(); d0=disk(); t0=time.time(); ts=[]; ct=None
