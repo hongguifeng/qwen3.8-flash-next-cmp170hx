@@ -10,14 +10,22 @@ from urllib.parse import quote
 
 import requests
 
-REPO = "klee100/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP"
-REVISION = "ce0e0b94083895bd836b916f29bf105c40a8162a"
-API = "https://hf-mirror.com"
-API_META = "https://huggingface.co"
-DEST = os.path.expanduser("~/models/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP")
+# Every knob below can be overridden by the environment, so the same downloader
+# works for other checkpoints without editing it, e.g.
+#   REPO=klee100/Qwen3.8-Flash-Next-Uncensored-AutoRound-3bpw-MTP \
+#   REVISION=060ce423a7fd31ae4b1a240b639429d7f6cb3764 \
+#   DEST=~/models/Qwen3.8-Flash-Next-Uncensored-AutoRound-3bpw-MTP \
+#   CONCURRENCY=16 python3 ops/tools/fdl.py
+REPO = os.environ.get("REPO", "klee100/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP")
+REVISION = os.environ.get("REVISION", "ce0e0b94083895bd836b916f29bf105c40a8162a")
+API = os.environ.get("FDL_API", "https://hf-mirror.com")
+API_META = os.environ.get("FDL_API_META", "https://huggingface.co")
+DEST = os.path.expanduser(
+    os.environ.get("DEST", "~/models/Qwen3.8-Flash-Next-AutoRound-3bpw-MTP")
+)
 STATE = os.path.join(DEST, ".fdl-state.json")
-CHUNK = 16 * 1024 * 1024
-CONCURRENCY = 48
+CHUNK = int(os.environ.get("CHUNK", 16 * 1024 * 1024))
+CONCURRENCY = int(os.environ.get("CONCURRENCY", 48))
 STALL_LIMIT = 420
 MAX_RETRY = 10
 
@@ -87,12 +95,15 @@ def load_state():
 
 
 def save_state(state):
+    # Snapshot first: _sigterm()/watchdog pass STATE_DATA itself, and clearing it
+    # before `update(state)` would blank the very dict we are asked to persist.
+    snapshot = dict(state)
     with lock:
         STATE_DATA.clear()
-        STATE_DATA.update(state)
+        STATE_DATA.update(snapshot)
     tmp = STATE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(state, f)
+        json.dump(snapshot, f)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, STATE)
@@ -146,6 +157,9 @@ def fetch(name, size, idx):
             last = exc
             with lock:
                 STATS["fail"] += 1
+                n = STATS["fail"]
+            if n <= 12 or n % 100 == 0:
+                print(f"    retry {name} chunk {idx} attempt {attempt}: {exc}", flush=True)
             time.sleep(min(1.5 * (attempt + 1), 20))
     raise RuntimeError(f"{name} chunk {idx}: {last}")
 
@@ -239,7 +253,8 @@ def main():
         os.replace(part, final)
         print(f"== completed {name}", flush=True)
     save_state(state)
-    open(os.path.expanduser("~/vllm/download-complete"), "w").write(
+    # Marker lives next to the checkpoint (~/vllm is deprecated; see AGENTS.md rule 10).
+    open(os.path.join(DEST, ".download-complete"), "w").write(
         time.strftime("%Y-%m-%d %H:%M:%S\n")
     )
     print("ALL DONE", flush=True)
