@@ -69,6 +69,7 @@ serve_cmd=(
     --mamba-cache-mode align
     --enable-prefix-caching
     --enable-chunked-prefill
+    --default-chat-template-kwargs "{\"enable_thinking\": ${QWEN_ENABLE_THINKING}}"
     --reasoning-parser qwen3
     --enable-auto-tool-choice --tool-call-parser qwen3_xml
     --additional-config "{\"ple_ssd_offload\":true,\"ple_ssd_workers\":${QWEN_SSD_WORKERS},\"ple_ssd_cache_mb\":${QWEN_SSD_CACHE_MB},\"ple_ssd_native_library\":\"${PLE_LIB}\",\"ple_ssd_io_depth\":${QWEN_SSD_DEPTH},\"ple_ssd_prefetch_tokens\":${QWEN_SSD_PREFETCH}}"

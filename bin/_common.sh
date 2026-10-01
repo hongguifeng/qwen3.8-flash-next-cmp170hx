@@ -52,6 +52,7 @@ print_params() {
     printf 'QWEN_BATCH_TOKENS=%s\n'    "$QWEN_BATCH_TOKENS"
     printf 'QWEN_GPU_MEMORY=%s\n'      "$QWEN_GPU_MEMORY"
     printf 'QWEN_MTP=%s\n'             "$QWEN_MTP"
+    printf 'QWEN_ENABLE_THINKING=%s\n' "$QWEN_ENABLE_THINKING"
     printf 'QWEN_SSD_WORKERS=%s\n'     "$QWEN_SSD_WORKERS"
     printf 'QWEN_SSD_CACHE_MB=%s\n'    "$QWEN_SSD_CACHE_MB"
     printf 'QWEN_SSD_DEPTH=%s\n'       "$QWEN_SSD_DEPTH"
