@@ -9,6 +9,9 @@ __pycache__/
 models/
 optimization/
 
+# 编辑器本地配置（`pendant.*` 等纯本机偏好）
+.vscode/
+
 # ── 本机运行资产（体积大或可复现，不入库）──
 # 原生引擎本体：.venv（~7 GB）+ 已打补丁的 vLLM 源码（958 MB，= vllm-project/vllm@a5a30471
 #   + patches/qwen38-ple-ssd.patch + ops/patches/qsa-alloc-heal.patch）+ optimization/*.so
