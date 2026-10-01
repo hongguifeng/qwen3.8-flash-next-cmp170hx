@@ -124,7 +124,7 @@ chk_host() {
 
 chk_gpu() {
     if [ ! -e /dev/dxg ]; then
-        bad host.gpu "/dev/dxg 不存在（WSL 里看不到 GPU）" "更新 Windows NVIDIA 驱动（≥616.92）+ wsl --update；不要装 Linux 内核驱动"
+        bad host.gpu "/dev/dxg 不存在（WSL 里看不到 GPU）" "更新 Windows NVIDIA 驱动 + wsl --update；不要装 Linux 内核驱动"
         return 0
     fi
     local line name total drv
@@ -366,7 +366,7 @@ do_plan() {
 $(hr)
   部署步骤（本机已部署完成；换机器/重装时按序执行，每步的验证命令都在括号里）
 $(hr)
-  0. 前置：Windows 驱动 ≥616.92、WSL ≥2.7.11、.wslconfig（memory=48GB / networkingMode=mirrored）
+  0. 前置：Windows 驱动可用（本机实测 KMD 610.88）、WSL ≥2.7.11、.wslconfig（memory=48GB / networkingMode=mirrored）
      (wsl --version; nvidia-smi.exe --query-gpu=driver_version --format=csv,noheader)     §2
   1. 取仓库 + 读 config/engine.env（端口与全部参数的唯一来源）
      (./start.sh --params)                                                               §3

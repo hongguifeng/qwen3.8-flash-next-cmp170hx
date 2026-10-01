@@ -39,7 +39,8 @@
 | 容器资源 | `.wslconfig`：`processors=16`、`memory=48GB`（`free -g` 显示 47 GiB 可用） | `/mnt/c/Users/<你>/.wslconfig` |
 | 网络模式 | `networkingMode=mirrored`（⇒ Windows 侧可用 `127.0.0.1`） | 同上 |
 | GPU | NVIDIA CMP 170HX，**65 536 MiB**，SM80，枚举到两张（`0B:00.0` 在用 / `0C:00.0` 空闲），引擎只用 `CUDA_VISIBLE_DEVICES=0` 那张 | `nvidia-smi.exe --query-gpu=…` |
-| 驱动 | KMD **616.92** / NVIDIA-SMI 615.71.08 / CUDA UMD 13.4；空闲 SM 时钟 210 MHz，预填期间实测 1485 MHz（上限 1695，功耗 58 W / 上限 250 W） | 同上 |
+| 驱动 | KMD **610.88** / NVIDIA-SMI 610.57.01 / CUDA UMD 13.3（2026-10-01 实测；9 月记录是 KMD 616.92 / SMI 615.71.08 / UMD 13.4，已在 §2.1 说明现在的判据） | `nvidia-smi` |
+| GPU 时钟/功耗 | 空闲 SM 210 MHz，负载峰值 **1485 MHz**（上限 1695）；**功耗上限 220 W**（requested 220 / default 250 / max 300）；显存 **1728 MHz 恒定**（= `Max Clocks: Memory`，硬件上限）；空闲 33 °C | `nvidia-smi`，详见 `ops/OPS.md §9.33` |
 | 磁盘 | 项目所在 ext4（`/dev/sdd`，即 `D:\wsl\ext4.vhdx`）1006 GiB，当前可用 216 GiB | `df -h` |
 | 运行时 | 原生 vLLM **0.29.1rc1.dev402+ga5a30471f.ple1**（editable）、torch **2.13.0+cu130**、triton **3.7.1**、transformers 5.17.0、Python **3.12.14** | `./deploy.sh check` |
 | 模型 | `Qwen3.8-Flash-Next-AutoRound-3bpw-MTP`，**13 个 safetensors / 142.5 GiB** | `deploy.sh check → model.*` |
@@ -59,12 +60,15 @@ init engine (profile, create kv cache, warmup model) took 44.50 s
 
 ### 2.1 Windows 侧（这些不满足，WSL 里怎么折腾都没用）
 
-1. **Windows NVIDIA 驱动 ≥ 616.92**：WSL 的 CUDA 走 `/dev/dxg`，由 **Windows 驱动**提供。
+1. **Windows NVIDIA 驱动：能用即可，本机现为 KMD 610.88**：WSL 的 CUDA 走 `/dev/dxg`，由 **Windows 驱动**提供。
    **绝对不要在 WSL 里装 Linux 版 NVIDIA 驱动**（会把 `/usr/lib/wsl/lib` 搞坏）。
    ```bash
    /mnt/c/Windows/System32/nvidia-smi.exe --query-gpu=name,memory.total,driver_version --format=csv
-   # NVIDIA Graphics Device, 65536 MiB, 616.92
+   # NVIDIA Graphics Device, 65536 MiB, 610.88   ← 2026-10-01 实测
    ```
+   > 历史措辞曾是"≥ 616.92"（9 月那份环境的实录）。**2026-10-01 在 KMD 610.88 上完整复测过**：
+   > 启动 294 s、健康检查 200、预填/解码全部达到或优于基线（`ops/OPS.md §9.33`）⇒ 610.88 已验证可用。
+   > 换驱动只需确认 `/usr/lib/wsl/lib/libcuda.so*` 存在且 `nvidia-smi` 能枚举到 GPU，不必强求某个具体版本号。
 2. **WSL ≥ 2.7.11**：`wsl.exe --version`；升级用 `wsl --update`（Windows 侧执行）。
 3. **`.wslconfig`**（`%USERPROFILE%\.wslconfig`，本机实测内容）：
    ```ini
@@ -295,14 +299,14 @@ bin/status.sh --watch 5       # 实时看：请求数 / KV / MTP 接受率 / 宿
 
 ## 5. 验收基线与判读
 
-**基线（`docs/RESULTS-WSL2.md`，本机 native pass3；偏离超过 ~1.5× 就该查）**
+**基线（`docs/RESULTS-WSL2.md`，本机 native pass3 + 2026-10-01 复测；偏离超过 ~1.5× 就该查）**
 
 | 指标 | 基线 | 判据 |
 |---|---|---|
 | `/health` | 200 | 不是 200 ⇒ 看 `bin/logs.sh -e` |
 | 预填 2048（新鲜 id） | 0.64~0.73 s（中位 0.693） | ≤0.80 PASS；≤1.15 WARN；>1.15 FAIL |
 | 预填 8192 | 2.0~2.4 s（中位 2.184） | 同上比例 |
-| 预填 131072 | 54.6 s（2 399 tok/s） | `verify --full` 会跑 |
+| 预填 131072 | **48.7~49.0 s（2 694 tok/s）**（2026-10-01 复测）；9 月旧记录 54.6 s / 2 399 tok/s | `verify --full` 会跑 |
 | 解码步时 | 15.2~15.7 ms（MTP=1）/ 17.2~17.6 ms（MTP=2） | 需先预热 ≥2500 token 且 `vmmemWSL < 32 GB`（铁律 3） |
 | 稳态解码 | ≈111 tok/s（MTP=1）/ ≈126 tok/s（MTP=2） | `bin/bench.sh` |
 | MTP 接受率 | ≈72% | `bin/status.sh` |

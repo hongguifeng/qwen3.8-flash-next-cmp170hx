@@ -11,7 +11,8 @@ settings snapshot: [manifest.json](../results/pass3-wsl2-native/manifest.json).
 | Item | Value |
 | --- | --- |
 | Host | Windows 11 24H2 (26100.4061), 88 GB RAM, 16 cores, WSL 2.7.11.0 (kernel 6.18.33.2), `networkingMode=mirrored` |
-| Compute GPU | NVIDIA CMP 170HX, 65 536 MiB, compute capability 8.0, driver 616.92, PCIe gen2 ×8 (display output is a separate Radeon RX550) |
+| Compute GPU | NVIDIA CMP 170HX, 65 536 MiB, compute capability 8.0, PCIe gen2 ×8 (display output is a separate Radeon RX550) |
+| GPU clocks / power | HBM 1 728 MHz fixed (= hardware max), SM idle 210 MHz / load peak 1 485 MHz (cap 1 695); **power limit 220 W** (default 250, max 300) since 2026-10-01 — see the re-measure section below |
 | Runtime | native vLLM 0.29.1rc1.dev402+ga5a30471f.ple1, torch 2.13.0+cu130, triton 3.7.1, Python 3.12 |
 | Patches | `patches/qwen38-ple-ssd.patch` (upstream, 1345 lines) + `ops/patches/qsa-alloc-heal.patch` (local allocator healer, 65 lines) |
 | Model | `Qwen3.8-Flash-Next-AutoRound-3bpw-MTP` (143 GB), 95.4 GiB BF16 PLE table read from SSD via `O_DIRECT` + AIO |
@@ -97,6 +98,7 @@ Windows had 6.9 GB free, and p50 17.4 ms / ≈126 tok/s after the balloon deflat
 | Prompt | Deployment | Prefill | Post-check (fresh 2 048) |
 | ---: | --- | ---: | ---: |
 | 131 072 | native | 54.63 s (2 399 tok/s) | 0.680 / 0.687 s ✔ |
+| 131 072 | native, 2026-10-01 re-measure | **48.66 / 49.00 s (2 694 tok/s)** | 0.653 / 0.653 s ✔ |
 | 131 072 | Docker (+ healer) | 53.54 s (2 450 tok/s) | 0.676 / 0.668 / 0.688 s ✔ |
 | 196 608 | Docker (+ healer) | 80.06 s (2 455 tok/s) | 0.668 s ✔ |
 | 262 143 | Docker (+ healer) | 104.70 s (2 504 tok/s) | 0.688 s ✔ (QXHEAL fired 8×) |
@@ -107,6 +109,41 @@ decode 1.7 × slower until restart. `ops/patches/qsa-alloc-heal.patch` fixes it:
 engine now serves the full 262 144-token context at a constant ≈2.5 K tok/s.
 The native deployment keeps the same patch (`QSA_ALLOC_HEAL=1`) and fired it once
 during a 131 K-token prefill.
+
+## Re-measure 2026-10-01 (new GPU power/clocks + driver KMD 610.88)
+
+After the operator changed the card's power limit (250 W → **220 W**) and memory-clock
+settings, the whole stack was re-measured on the running native deployment
+(full log: `ops/OPS.md §9.33`, raw rows in `ops/measurements/perf-history.csv`).
+Startup took 294 s, VRAM 59 953 MiB.
+
+| Metric | 2026-10-01 | 2026-09-29 record |
+| --- | --- | --- |
+| Prefill 2 048 | **0.653 s** (3 132 tok/s) | 0.693 s median |
+| Prefill 8 192 | **2.225 s** (3 682 tok/s) | 2.184 s median |
+| Prefill 131 072 | **48.66 / 49.00 s** (2 694 tok/s) | 54.63 s (2 399) |
+| Post-131 K fresh 2 048 | 0.653 s ✔ | 0.680 / 0.687 s |
+| Decode step p50 (MTP=2) | **17.3–17.7 ms** | 17.2–17.6 ms |
+| Decode tok/s (1 024 out, 68.7 % accept) | 129.0 | 118.4–130.9 |
+| Concurrency 1 aggregate / decode | 115.9 – 144.3 / 127.2 – 156.7 | 122.55 / 131.19 |
+| Concurrency 4 aggregate / decode | 277.6 – 319.8 / 83.4 – 90.7 | 305.42 / 90.87 |
+
+Power/clock sampling during the run (`nvidia-smi -lms 250`):
+
+| Phase | Power | SM clock | Throttle reason |
+| --- | --- | --- | --- |
+| decode (busy) | mean 177 W / peak 204 W | mean 1 478 / peak 1 485 MHz | none |
+| 131 072 prefill | peak **320 W** | peak 1 485 MHz | `0x4 SW Power Cap` in 264/936 samples (28 %) |
+
+So the 220 W cap never binds during decode and only clips transient peaks during long
+prefill — where throughput came out **10.9 % higher** than the previous record anyway.
+Note NVML reports the HBM clock unchanged at 1 728 MHz (its hard maximum) both before
+and after, and the Windows driver is now KMD 610.88 (was 616.92 in September).
+
+⚠️ Measurement trap observed here: the first 3–4 decode rounds after startup showed
+p50 18.4–19.1 ms and converged to 17.3–17.7 ms only after the 2 500-token warm-up *and*
+with the host balloon down (vmmemWSL ≤ 30 GB). Judging the GPU change on the first few
+rounds would have looked like a 7 % regression that does not exist.
 
 ## Validation smoke checks
 
