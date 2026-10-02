@@ -3,6 +3,7 @@
 import json
 import os
 import signal
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -152,6 +153,11 @@ def fetch(name, size, idx):
             with open(os.path.join(DEST, name + ".part"), "r+b") as f:
                 f.seek(start)
                 f.write(buf)
+                # 必须落盘，上层才会把这一块记进 state：2026-10-01 主机 BSOD 时，
+                # state 文件已 fsync 而数据还在 page cache 里 ⇒ 恢复后这 48 块被跳过，
+                # model-00005 里留下 304 MiB 的洞（读出来全是 0，尺寸/尾部检查看不出来）。
+                f.flush()
+                os.fsync(f.fileno())
             return len(buf)
         except Exception as exc:  # noqa: BLE001
             last = exc
@@ -193,6 +199,25 @@ def report():
         )
 
 
+def has_holes(path, tol=1 << 20):
+    """文件里是否有未分配的洞（ext4 稀疏文件读出来是 0）。
+
+    尺寸、尾部字节数、header 全对的文件照样可能是坏的：崩溃丢掉的是
+    page cache 里的脏页，而 state 文件已经 fsync 过 ⇒ 恢复时那些块被跳过，
+    文件里留下一段全 0。只有比较 st_blocks 才看得出来（2026-10-01 实测）。
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return st.st_blocks * 512 + tol < st.st_size
+
+
+def hole_mib(path):
+    st = os.stat(path)
+    return max(0, st.st_size - st.st_blocks * 512) / 2**20
+
+
 def main():
     os.makedirs(DEST, exist_ok=True)
     files = get_files()
@@ -215,10 +240,18 @@ def main():
     for name, size in files:
         final = os.path.join(DEST, name)
         if os.path.exists(final) and os.path.getsize(final) == size:
-            print(f"== {name} already complete", flush=True)
-            continue
+            if has_holes(final):
+                print(
+                    f"== {name} 尺寸对但含 {hole_mib(final):.1f} MiB 的洞（崩溃丢脏页）-> 重下",
+                    flush=True,
+                )
+                os.replace(final, final + ".part")
+                state[name] = []
+            else:
+                print(f"== {name} already complete", flush=True)
+                continue
         part = final + ".part"
-        if not os.path.exists(part) or os.path.getsize(part) != size:
+        if not os.path.exists(part) or os.path.getsize(part) != size or has_holes(part):
             with open(part, "wb") as f:
                 f.truncate(size)
             state[name] = []
@@ -253,12 +286,21 @@ def main():
         os.replace(part, final)
         print(f"== completed {name}", flush=True)
     save_state(state)
+    # 交付前必须再确认没有洞：尺寸与尾部都对、内容是 0 的文件会静默毒害推理。
+    bad = [n for n, _ in files if has_holes(os.path.join(DEST, n))]
+    if bad:
+        print("!! 下列文件含未分配的洞，数据不可信：", flush=True)
+        for n in bad:
+            print(f"   {n}  {hole_mib(os.path.join(DEST, n)):.1f} MiB", flush=True)
+        print("!! 不写完成标记；重跑本脚本会自动重下这些文件。", flush=True)
+        return 1
     # Marker lives next to the checkpoint (~/vllm is deprecated; see AGENTS.md rule 10).
     open(os.path.join(DEST, ".download-complete"), "w").write(
         time.strftime("%Y-%m-%d %H:%M:%S\n")
     )
     print("ALL DONE", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
