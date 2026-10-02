@@ -3,7 +3,8 @@
 #
 # 用法:
 #   bin/stop.sh --check          # 【先跑这个】只报告"现在停会不会打断用户请求"，不做任何事
-#   bin/stop.sh                  # 停止引擎
+#   bin/stop.sh                  # 停止默认档位 main 的引擎
+#   bin/stop.sh --model unc      # 停止档位 unc 的引擎（看谁在跑：--model list）
 #   bin/stop.sh --params         # 只打印生效参数
 #   bin/stop.sh --help
 #
@@ -11,22 +12,35 @@
 # 不会自动 SIGKILL：60s 未退出时它会报错并让你先看日志（真要强杀：QWEN_FORCE=1 bin/stop.sh）。
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-CHECK_ONLY=0
+CHECK_ONLY=0; MODEL_ARG=""; PARAMS_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --check) CHECK_ONLY=1 ;;
-        --params) print_params; exit 0 ;;
+        --model) MODEL_ARG="${2:-}"; shift ;;
+        --params) PARAMS_ONLY=1 ;;          # 不直接输出：要先让 --model 生效
         -h|--help) help_exit "$0" ;;
         *) echo "未知参数: $1（--help 看用法）" >&2; exit 2 ;;
     esac
     shift
 done
 
+# ---- 选档位（必须在下面所有探活/打印之前）------
+case "${MODEL_ARG:-}" in
+    '') ;;
+    list|ls) variant_list; exit 0 ;;
+    *) set_variant "$MODEL_ARG" || exit 2 ;;
+esac
+if [ "$PARAMS_ONLY" = 1 ]; then print_params; exit 0; fi
+
 running="$(metric num_requests_running)"
 waiting="$(metric num_requests_waiting)"
 # 指标读不到时不能瞎判：服务未就绪 / 端口刚改过还没重启时，
 # 旧逻辑会把空值当成"有请求在跑"（"-" ≠ "0"），既吓人又误导。
 if [ "$CHECK_ONLY" = 1 ]; then
+    if ! engine_alive; then
+        echo "档位 $VARIANT 未在运行（无存活进程），无需停止"
+        exit 0
+    fi
     if [ -z "$running" ]; then
         echo "运行中请求=读不到  排队=读不到"
         c_warn "读不到 $BASE_URL/metrics ⇒ 无法判断有没有人在用"
@@ -63,4 +77,4 @@ fi
 echo "显存: $(gpu_mem)"
 
 echo
-echo "重启: bin/start.sh        回退到 Docker: $ROOT/ops/legacy-docker/run_container.sh"
+echo "重启: bin/start.sh --model $VARIANT        回退到 Docker: $ROOT/ops/legacy-docker/run_container.sh"

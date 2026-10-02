@@ -2,7 +2,8 @@
 # 查看推理服务日志。
 #
 # 用法:
-#   bin/logs.sh                  # 末尾 80 行
+#   bin/logs.sh                  # 末尾 80 行（默认档位 main）
+#   bin/logs.sh --model unc      # 看档位 unc 的日志（server-unc.log）
 #   bin/logs.sh -f               # 持续跟踪（Ctrl-C 退出）
 #   bin/logs.sh -n 300           # 末尾 300 行
 #   bin/logs.sh -e               # 只看错误/异常/回溯
@@ -15,7 +16,7 @@
 #   bin/logs.sh --help
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-N=80; FOLLOW=0; MODE=plain
+N=80; FOLLOW=0; MODE=plain; MODEL_ARG=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -f|--follow) FOLLOW=1 ;;
@@ -25,15 +26,27 @@ while [ $# -gt 0 ]; do
         --startup) MODE=startup ;;
         --slow) MODE=slow ;;
         --list) MODE=list ;;
-        --path) echo "$LOG_FILE"; exit 0 ;;
+        --path) MODE=path ;;
         --clean) MODE=clean ;;
+        --model) MODEL_ARG="${2:-}"; shift ;;
         -h|--help) help_exit "$0" ;;
         *) echo "未知参数: $1（--help 看用法）" >&2; exit 2 ;;
     esac
     shift
 done
 
-[ -f "$LOG_FILE" ] || { echo "日志文件不存在: $LOG_FILE（服务可能从未启动过）" >&2; exit 1; }
+# ---- 选档位（必须在取日志路径之前）------
+case "${MODEL_ARG:-}" in
+    '') ;;
+    list|ls) variant_list; exit 0 ;;
+    *) set_variant "$MODEL_ARG" || exit 2 ;;
+esac
+if [ "$MODE" = path ]; then echo "$LOG_FILE"; exit 0; fi
+
+# --list 不需要当前日志存在（可能还没启动过），其余模式需要
+if [ "$MODE" != list ] && [ ! -f "$LOG_FILE" ]; then
+    echo "日志文件不存在: $LOG_FILE（档位 $VARIANT 可能从未启动过）" >&2; exit 1
+fi
 
 case "$MODE" in
     list)

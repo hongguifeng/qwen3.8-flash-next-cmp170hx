@@ -11,30 +11,26 @@
 #   run_native.sh foreground   # 前台运行（调试用，Ctrl-C 退出）
 #   run_native.sh --help
 #
-# 参数默认值全在 config/engine.env（**唯一来源**），环境变量优先：
-#   QWEN_PORT=9393 QWEN_MTP=2 QWEN_BATCH_TOKENS=2048 run_native.sh start
+# 档位（模型目录 / 端口 / 显卡）的默认值全在 config/engine.env（**唯一来源**），环境变量优先；
+# 日常入口是 `bin/start.sh --model <档位>`，本脚本直接用环境变量选档：
+#   QWEN_MODEL=unc run_native.sh start           # 档位 unc：GPU1 / :8001 / server-unc.{pid,log}
+#   QWEN_MTP=2 QWEN_MODEL=unc run_native.sh print-cmd
+#   QWEN_INSTANCE=b …                            # 历史写法，等价于 QWEN_MODEL=unc
 #
 # 目录布局：本脚本在 <repo>/vllm-native/bin/ 下，$ENGINE_DIR=<repo>/vllm-native，
 # 引擎自身所需的一切（venv / 已打补丁的 vLLM 源码 / Triton 缓存 / 日志）都在其下，
-# 唯一的外部依赖是只读的模型权重（QWEN_MODEL_DIR）与 <repo>/config/engine.env。
+# 唯一的外部依赖是只读的模型权重（$MODEL_DIR）与 <repo>/config/engine.env。
 set -euo pipefail
 
-ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # <repo>/vllm-native
-ROOT="$(cd "$ENGINE_DIR/.." && pwd)"                            # 仓库根（config 里 $ROOT 的语义）
-CFG_FILE="$ROOT/config/engine.env"
-if [ ! -r "$CFG_FILE" ]; then
-    echo "错误：找不到 $CFG_FILE（引擎参数的唯一默认值来源）" >&2
-    exit 1
-fi
-. "$CFG_FILE"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # 仓库根
+# shellcheck source=/dev/null
+. "$ROOT/bin/_common.sh"    # 唯一默认值来源 + 档位解析（$VARIANT/$MODEL_DIR/$PORT/$PID_FILE/$LOG_FILE/…）
+# _common.sh 已经设好：$ENGINE_DIR、$MODEL_DIR、$PORT、$LOG_DIR、$LOGNAME、$LOG_FILE、$PID_FILE、
+# $CUDA_VISIBLE_DEVICES；档位由 QWEN_MODEL（或历史 QWEN_INSTANCE）决定，显式环境变量优先。
 
 VLLM_VENV="$ENGINE_DIR/opt/vllm/.venv"
-LOGDIR="$ENGINE_DIR/logs"
-PIDFILE="$LOGDIR/server.pid"
 TRITON_CACHE="$QWEN_TRITON_CACHE_DIR"
 PLE_LIB="$QWEN_PLE_LIB"
-MODEL_DIR="$QWEN_MODEL_DIR"
-PORT="$QWEN_PORT"
 
 # ---- 环境（等价于镜像里的 /opt/entrypoint.sh，每一项都有踩坑依据）--------------
 export PATH="$VLLM_VENV/bin:$PATH"
@@ -84,42 +80,42 @@ if (( QWEN_MTP > 0 )); then
 fi
 
 is_up()    { curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:${PORT}/health"; }
-running()  { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+running()  { [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
 
 case "${1:-start}" in
     start)
-        mkdir -p "$LOGDIR" "$TRITON_CACHE"
+        mkdir -p "$LOG_DIR" "$TRITON_CACHE"
         if [ ! -w "$TRITON_CACHE" ]; then
             echo "错误：TRITON_CACHE_DIR=$TRITON_CACHE 不可写（是不是 Docker(root) 建的那份？）" >&2
             echo "修复：cp -r $ROOT/ops/legacy-docker/triton_cache/. $TRITON_CACHE/" >&2
             exit 1
         fi
         # 日志轮转：超过 QWEN_LOG_MAX_MB 就换名保存，只留最近 QWEN_LOG_KEEP 份
-        if [ -f "$LOGDIR/server.log" ] && [ "$(stat -c%s "$LOGDIR/server.log")" -gt "$(( QWEN_LOG_MAX_MB * 1048576 ))" ]; then
-            mv "$LOGDIR/server.log" "$LOGDIR/server-$(date +%Y%m%d-%H%M%S).log"
-            ls -1t "$LOGDIR"/server-*.log 2>/dev/null | tail -n "+$(( QWEN_LOG_KEEP + 1 ))" | xargs -r rm -f
+        if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE")" -gt "$(( QWEN_LOG_MAX_MB * 1048576 ))" ]; then
+            mv "$LOG_FILE" "$LOG_DIR/$LOGNAME-$(date +%Y%m%d-%H%M%S).log"
+            ls -1t "$LOG_DIR"/$LOGNAME-*.log 2>/dev/null | tail -n "+$(( QWEN_LOG_KEEP + 1 ))" | xargs -r rm -f
         fi
         if running; then
-            echo "已在运行 (pid $(cat "$PIDFILE"))；要重启请用 bin/stop.sh && bin/start.sh"
+            echo "档位 $VARIANT 已在运行 (pid $(cat "$PID_FILE"))；要重启请用 bin/stop.sh --model $VARIANT && bin/start.sh --model $VARIANT"
             exit 0
         fi
-        echo "启动原生引擎：$VLLM_VENV/bin/vllm  port=$PORT  model=$MODEL_DIR"
-        echo "日志：$LOGDIR/server.log（追加写入 O_APPEND；轮转见上）"
+        echo "启动原生引擎（档位 $VARIANT）：$VLLM_VENV/bin/vllm  port=$PORT  model=$MODEL_DIR  CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+        echo "日志：$LOG_FILE（追加写入 O_APPEND；轮转见上）"
         # 用 >> （O_APPEND）而不是 > ：
         #   1) 轮转后不会把旧日志截掉，日志成为带轮转的连续记录（>100MB 自动归档，留 5 份）；
         #   2) 只有 O_APPEND 的写入者才能安全地被 logs.sh --clean 就地截断
         #      （非 O_APPEND 时进程记得自己的偏移量，截断后下次写入会在文件头留下 NUL 空洞）。
-        setsid nohup "${serve_cmd[@]}" >>"$LOGDIR/server.log" 2>&1 &
-        echo $! > "$PIDFILE"
-        echo "pid=$(cat "$PIDFILE")  就绪后 /health 返回 200（首次需 5~7 分钟加载权重）"
+        setsid nohup "${serve_cmd[@]}" >>"$LOG_FILE" 2>&1 &
+        echo $! > "$PID_FILE"
+        echo "pid=$(cat "$PID_FILE")  就绪后 /health 返回 200（首次需 5~7 分钟加载权重）"
         ;;
     stop)
         if ! running; then
-            echo "引擎未在运行"
-            rm -f "$PIDFILE"
+            echo "档位 $VARIANT 的引擎未在运行"
+            rm -f "$PID_FILE"
             exit 0
         fi
-        pid="$(cat "$PIDFILE")"
+        pid="$(cat "$PID_FILE")"
         echo "优雅停止 pid=$pid（SIGTERM，最多等 60s）…"
         kill -TERM "$pid" 2>/dev/null || true
         for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
@@ -130,12 +126,12 @@ case "${1:-start}" in
                 kill -KILL "$pid" 2>/dev/null || true
                 sleep 2
             else
-                echo "错误：pid $pid 60s 内未退出。请先 bin/logs.sh -n 80 看它在等什么；" >&2
-                echo "      确认无请求在跑后再 QWEN_FORCE=1 bin/stop.sh" >&2
+                echo "错误：pid $pid 60s 内未退出。请先 bin/logs.sh -n 80 --model $VARIANT 看它在等什么；" >&2
+                echo "      确认无请求在跑后再 QWEN_FORCE=1 bin/stop.sh --model $VARIANT" >&2
                 exit 1
             fi
         fi
-        rm -f "$PIDFILE"
+        rm -f "$PID_FILE"
         echo "已停止"
         ;;
     restart)
@@ -143,9 +139,9 @@ case "${1:-start}" in
         exec "$0" start
         ;;
     status)
-        echo "port $PORT  /health: $(is_up && echo 200 || echo DOWN)   pid: $(cat "$PIDFILE" 2>/dev/null || echo '-')"
+        echo "档位 $VARIANT  port $PORT  /health: $(is_up && echo 200 || echo DOWN)   pid: $(cat "$PID_FILE" 2>/dev/null || echo '-')   gpu=${CUDA_VISIBLE_DEVICES}  model=$MODEL_DIR"
         if running; then
-            ps -o pid,etime,rss,cmd -p "$(cat "$PIDFILE")" | tail -1
+            ps -o pid,etime,rss,cmd -p "$(cat "$PID_FILE")" | tail -1
             curl -s --max-time 3 "http://127.0.0.1:${PORT}/metrics" \
                 | awk '/^vllm:num_requests_running/{print "running="$2}' || true
         fi
@@ -156,13 +152,14 @@ case "${1:-start}" in
         ;;
     params)
         echo "参数来源: $CFG_FILE   （环境变量优先，下面按字母序）"
-        printf '  %-24s %s\n' QWEN_PORT "$QWEN_PORT" QWEN_HOST "$QWEN_HOST" QWEN_MTP "$QWEN_MTP" \
+        printf '  %-24s %s\n' QWEN_MODEL "$VARIANT" QWEN_PORT "$QWEN_PORT" QWEN_HOST "$QWEN_HOST" QWEN_MTP "$QWEN_MTP" \
             QWEN_CONTEXT "$QWEN_CONTEXT" QWEN_SEQS "$QWEN_SEQS" QWEN_BATCH_TOKENS "$QWEN_BATCH_TOKENS" \
-            QWEN_GPU_MEMORY "$QWEN_GPU_MEMORY" QWEN_MODEL_DIR "$QWEN_MODEL_DIR" \
-            QWEN_TRITON_CACHE_DIR "$TRITON_CACHE" QWEN_ALLOC_HEAL "$QWEN_ALLOC_HEAL"
+            QWEN_GPU_MEMORY "$QWEN_GPU_MEMORY" MODEL_DIR "$MODEL_DIR" CUDA_VISIBLE_DEVICES "$CUDA_VISIBLE_DEVICES" \
+            QWEN_TRITON_CACHE_DIR "$TRITON_CACHE" QWEN_ALLOC_HEAL "$QWEN_ALLOC_HEAL" \
+            LOG_FILE "$LOG_FILE" PID_FILE "$PID_FILE"
         ;;
     foreground)
-        mkdir -p "$LOGDIR" "$TRITON_CACHE"
+        mkdir -p "$LOG_DIR" "$TRITON_CACHE"
         exec "${serve_cmd[@]}"
         ;;
     -h|--help|help)

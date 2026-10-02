@@ -144,7 +144,10 @@ ops/tools/consult.sh <brief.md> 10 --wait    # 前台等（带进度）+ 结果�
 
 ```bash
 ./start.sh                   # 启动（根目录入口，薄封装 bin/start.sh；等就绪 250~320 s）
-bin/start.sh                 # 同上（等价）；--wait/--keep-cache/--foreground 都支持
+./start.sh unc               # 档位 unc（未审查 checkpoint，GPU1 / :8001，与主实例可并行）
+./start.sh unc 0             # 两个位置参数 = 档位 + 显卡；./start.sh 1 = 只换卡；./start.sh list
+bin/start.sh                 # 同上（等价）；--wait/--keep-cache/--foreground/--model/--gpu 都支持
+bin/status.sh --model unc    # 管哪个档位就带同一个 --model（stop/status/logs/bench 都支持）
 ./deploy.sh check            # 部署/环境自检（只读）：环境/GPU/内存/磁盘/模型/运行时/补丁/服务
 ./deploy.sh verify           # 验收：health=200 + 新鲜 2048 预填对比基线（判读见 docs/DEPLOY-WSL2.md §5）
 bin/status.sh                # 健康 / 请求 / 显存 / 宿主内存 / MTP 接受率（--watch 5 刷新、--short 单行）
@@ -168,6 +171,8 @@ QWEN_MTP=1 ./start.sh        # 临时覆盖一次（环境变量优先）
 可调项：`QWEN_PORT`（8000）、`QWEN_MTP`（默认 2 = 实测最快）、`QWEN_GPU_MEMORY`（0.94）、
 `QWEN_CONTEXT`（262144）、`QWEN_SEQS`（4）、`QWEN_BATCH_TOKENS`（**2048，改成 8192 会慢 2 倍**）。
 脚本改动/新增脚本前先看 `docs/SCRIPTS.md`（含 4 条硬约定）。
+**模型档位（选模型 / 选卡）也在同一处**：`QWEN_MODELS` + `QWEN_<大写档位>_{MODEL_DIR,SERVED_NAME,PORT,GPU}`，
+新增档位只改 `config/engine.env`；日常入口 `./start.sh --model <档位> [--gpu N]`（详见 `docs/SCRIPTS.md` §1.1）。
 
 **基线数字**（判异常用，详见 `docs/RESULTS-WSL2.md`）：
 预填 2048 ≈ 0.64~0.73 s、8192 ≈ 2.0~2.4 s、131072 ≈ **48.7~49.0 s**

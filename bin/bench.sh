@@ -3,11 +3,12 @@
 #
 # 用法:
 #   bin/bench.sh                 # 2048/8192 预填 + 解码（约 1.5 分钟）
+#   bin/bench.sh --model unc     # 体检另一个档位（默认 main；--model list 看有哪些）
 #   bin/bench.sh --full          # 追加 131072 长上下文 + 事后“中毒”检查（约 3 分钟）
 #   bin/bench.sh --reps 3        # 预填每个长度重复次数（默认 2）
 #   bin/bench.sh --prefill       # 只测预填
 #   bin/bench.sh --decode        # 只测解码
-#   bin/bench.sh --tag mtp3      # 给这次记录打标签
+#   bin/bench.sh --tag mtp3      # 给这次记录打标签（非 main 档位会自动写成 mtp3@unc，避免混档）
 #   bin/bench.sh --no-save       # 不写存档
 #   bin/bench.sh --params        # 只打印生效参数（含当前引擎端口）
 #   bin/bench.sh --help
@@ -26,7 +27,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # 探针（ops/bench/*.py）不硬编码端口：它们优先读 BASE_URL/QWEN_PORT（见 ops/bench/_cfg.py）
 export BASE_URL QWEN_PORT QWEN_SERVED_NAME MODEL_NAME
 
-REPS=2; FULL=0; DO_PREFILL=1; DO_DECODE=1; SAVE=1; TAG=manual
+REPS=2; FULL=0; DO_PREFILL=1; DO_DECODE=1; SAVE=1; TAG=manual; MODEL_ARG=""; PARAMS_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --full) FULL=1 ;;
@@ -35,23 +36,36 @@ while [ $# -gt 0 ]; do
         --decode) DO_PREFILL=0 ;;
         --tag) TAG="${2:-manual}"; shift ;;
         --no-save) SAVE=0 ;;
-        --params) print_params; exit 0 ;;
+        --model) MODEL_ARG="${2:-}"; shift ;;
+        --params) PARAMS_ONLY=1 ;;          # 不直接输出：要先让 --model 生效
         -h|--help) help_exit "$0" ;;
         *) echo "未知参数: $1（--help 看用法）" >&2; exit 2 ;;
     esac
     shift
 done
 
-[ "$(health_code)" = "200" ] || { c_err "服务未就绪（/health ≠ 200），先 bin/start.sh"; exit 1; }
+# ---- 选档位（必须在探活/探针之前）------
+case "${MODEL_ARG:-}" in
+    '') ;;
+    list|ls) variant_list; exit 0 ;;
+    *) set_variant "$MODEL_ARG" || exit 2 ;;
+esac
+if [ "$PARAMS_ONLY" = 1 ]; then print_params; exit 0; fi
+# 非默认档位：tag 自动带 @档位，否则两支模型的数据在历史表里分不出来
+[ "$VARIANT" != main ] && TAG="$TAG@$VARIANT"
+
+[ "$(health_code)" = "200" ] || { c_err "档位 $VARIANT 的服务未就绪（$BASE_URL/health ≠ 200），先 bin/start.sh --model $VARIANT"; exit 1; }
 
 OUTDIR="$ROOT/ops/measurements"; HIST="$OUTDIR/perf-history.csv"
 mkdir -p "$OUTDIR"
 TS="$(date '+%Y-%m-%dT%H:%M:%S')"
 MTP_NOW="$(tr '\0' ' ' < "/proc/$(engine_pid)/cmdline" 2>/dev/null | grep -oP '"num_speculative_tokens":\K[0-9]+' || true)"
-RAW="$OUTDIR/bench-$(date '+%Y%m%d-%H%M%S').log"
+SUFFIX=""; [ "$VARIANT" != main ] && SUFFIX="-$VARIANT"
+RAW="$OUTDIR/bench${SUFFIX}-$(date '+%Y%m%d-%H%M%S').log"
 exec > >(tee -a "$RAW") 2>&1
 
-echo "# bench $TS  tag=$TAG  MTP=$("$ROOT/bin/status.sh" --short | grep -oP 'acc=\S+' )"
+echo "# bench $TS  tag=$TAG  variant=$VARIANT  gpu=${CUDA_VISIBLE_DEVICES}  model=$MODEL_NAME"
+echo "# 接受率 $("$ROOT/bin/status.sh" --short --model "$VARIANT" | grep -oP 'acc=\S+')  接口=$BASE_URL"
 echo "# 宿主: $(windows_host_mem)   guest: $(free -m | sed -n 2p | awk '{print "used="$3"MB free="$4"MB"}')"
 host_ws="$(windows_host_mem | grep -oP 'vmmem=\K[0-9.]+' || echo 0)"
 if [ "$DO_DECODE" = 1 ] && awk -v w="$host_ws" 'BEGIN{exit !(w>32)}'; then

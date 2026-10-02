@@ -118,9 +118,9 @@ init engine (profile, create kv cache, warmup model) took 44.50 s
 
 ```
 /home/hong/code/qwen3.8-flash-next-cmp170hx/
-├── start.sh                    ← 启动入口（薄封装 → bin/start.sh）
+├── start.sh                    ← 启动入口（薄封装 → bin/start.sh）：`./start.sh [档位] [显卡号]`
 ├── deploy.sh                   ← 部署/自检入口（薄封装 → ops/deploy/deploy_wsl2.sh）
-├── config/engine.env           ← 【唯一默认值来源】端口/模型/上下文/MTP/PLE offload/治愈线程
+├── config/engine.env           ← 【唯一默认值来源】端口/模型/档位/上下文/MTP/PLE offload/治愈线程
 ├── bin/                        ← 日常入口：start/stop/status/logs/bench/drop_host_cache/_common
 ├── vllm-native/                ← 原生引擎本体（大部分被 .gitignore 排除，见下表）
 │   ├── bin/run_native.sh       ← 【唯一】拼 `vllm serve` 命令行的地方 ✅ 入库
@@ -284,6 +284,8 @@ cp -r ops/legacy-docker/triton_cache/. vllm-native/triton_cache/      # 或从�
 ```
 ./start.sh → bin/start.sh → vllm-native/bin/run_native.sh start → setsid nohup vllm serve …（脱离会话）
 ```
+档位（模型 + 端口 + 显卡）只由 `config/engine.env` 定义；`./start.sh unc` 走同一条链，只是换了模型目录/端口/卡，
+pid 与日志独立成 `server-unc.{pid,log}`，可与主实例**同时跑**（默认 GPU1 / :8001）。
 **期望**：结尾打印 `接口 http://127.0.0.1:8000/v1`、`pid …`、`显存 …`。
 引擎日志在 `vllm-native/logs/server.log`（>100 MB 自动轮转，留 5 份）。
 
@@ -325,9 +327,10 @@ bin/status.sh --watch 5       # 实时看：请求数 / KV / MTP 接受率 / 宿
 | 想干什么 | 命令 |
 |---|---|
 | 启动 / 停止 / 重启 | `./start.sh`、`bin/stop.sh`（先 `--check`）、`bin/stop.sh && ./start.sh` |
-| 看状态（单行 / 实时） | `bin/status.sh --short`、`bin/status.sh --watch 5` |
-| 看日志 | `bin/logs.sh -f`、`-e`（错误）、`--startup`、`--heal`（治愈线程）、`--list`（归档） |
-| 体检 + 存档 | `bin/bench.sh`（追加 `ops/measurements/perf-history.csv`）、`--full`、`--tag mtp3` |
+| 跑另一个模型 / 换卡 | `./start.sh unc`（未审查 checkpoint，默认 GPU1 / :8001）、`./start.sh unc 0`、`./start.sh 1`、`./start.sh list` |
+| 看状态（单行 / 实时） | `bin/status.sh --short`、`bin/status.sh --watch 5`；另一个档位加 `--model unc` |
+| 看日志 | `bin/logs.sh -f`、`-e`（错误）、`--startup`、`--heal`（治愈线程）、`--list`（归档）；`--model unc` |
+| 体检 + 存档 | `bin/bench.sh`（追加 `ops/measurements/perf-history.csv`）、`--full`、`--tag mtp3`；`--model unc`（tag 自动写成 `mtp3@unc`） |
 | 还内存给 Windows | `bin/drop_host_cache.sh`（加载模型后 / 解码测速前必跑） |
 | 只读看板 | `ops/tools/metrics_web.sh start` → `http://127.0.0.1:9494` |
 | 客户端 | `http://127.0.0.1:8000/v1`，模型名 `Qwen3.8-Flash-Next`；**Windows 侧不能用 `localhost`**（铁律 2） |

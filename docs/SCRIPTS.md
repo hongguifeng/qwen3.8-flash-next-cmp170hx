@@ -23,11 +23,49 @@ config/engine.env        # 端口、模型、上下文、MTP、PLE offload、治
 **改端口 / 改参数只有两种做法，都不需要动别的文件：**
 
 ```bash
-$EDITOR config/engine.env        # ① 永久改默认值
+$EDITOR config/engine.env        # ① 永久改默认值（含加模型档位）
 QWEN_MTP=1 ./start.sh            # ② 临时覆盖一次（不改文件）
 
 ./start.sh --params              # 看此刻实际生效的值与来源
+./start.sh --model list          # 看有哪些模型档位（模型目录 / 端口 / 显卡）
 ```
+
+### 1.1 模型档位（variant）：选模型 + 选卡
+
+**一个档位 = 一套「模型目录 + 对外模型名 + 端口 + 显卡」**。默认两个：
+
+| 档位 | 模型 | 端口 | 显卡 | pid / 日志 |
+|---|---|---|---|---|
+| `main` | `Qwen3.8-Flash-Next-AutoRound-3bpw-MTP` | 8000 | GPU0 | `server.pid` / `server.log` |
+| `unc` | `Qwen3.8-Flash-Next-Uncensored-AutoRound-3bpw-MTP`（别名 `uncensored`/`b`） | 8001 | GPU1 | `server-unc.pid` / `server-unc.log` |
+
+```bash
+# 最常用：位置参数就够了（第一个 = 档位，第二个 = 显卡）
+./start.sh unc                     # 起档位 unc（默认 GPU1 / :8001）
+./start.sh unc 0                   # 档位 unc + GPU0（端口仍是该档位默认的 8001）
+./start.sh 1                       # 只换卡，模型仍是 main
+./start.sh list                    # 列出所有档位（不启动）
+# 长写法 / 环境变量（完全等价）
+./start.sh --model unc --gpu 0
+QWEN_MODEL=unc ./start.sh
+# 管哪个档位就带同一个参数（stop/status/logs/bench 都支持）
+bin/status.sh --model unc          bin/stop.sh --model unc          bin/bench.sh --model unc --full
+```
+
+两个实例可以**同时跑**（不同卡/端口/pid/日志，互不覆盖）；`start.sh` 启动前会检查目标端口与目标显卡的占用。
+
+**新增一个模型档位（只改 `config/engine.env`，脚本不用动）**：
+
+```bash
+: "${QWEN_MODELS:=main unc trl}"                    # ① 档位清单（第一个是默认档位）
+: "${QWEN_TRL_MODEL_DIR:=/home/hong/models/…}"      # ② 该档位的四个变量
+: "${QWEN_TRL_SERVED_NAME:=Qwen3.8-Flash-Next-TRL}"
+: "${QWEN_TRL_PORT:=8002}"
+: "${QWEN_TRL_GPU:=0}"
+```
+
+优先级：`--model`/`QWEN_MODEL` > 显式环境变量（`QWEN_PORT=` / `CUDA_VISIBLE_DEVICES=`）> 档位默认值。
+历史名字（2026-10-01 §9.37 用的那套）继续有效：`QWEN_INSTANCE=b` ≡ `QWEN_MODEL=unc`，`QWEN_B_*` 仍然能覆盖档位 unc。
 
 ---
 
@@ -53,14 +91,15 @@ QWEN_MTP=1 ./start.sh            # ② 临时覆盖一次（不改文件）
 
 | 脚本 | 职责 | 常用 |
 |---|---|---|
-| `./start.sh` | 根入口，等价于 `bin/start.sh` | `./start.sh`、`--params`、`--keep-cache` |
+| `./start.sh` | 根入口，等价于 `bin/start.sh` | `./start.sh`、`--model unc`、`--gpu 1`、`--params` |
 | `./deploy.sh` | 根入口 → `ops/deploy/deploy_wsl2.sh`：**部署/自检**（默认只读） | `check`、`check --json`、`verify`、`plan`、`install --yes` |
-| `bin/start.sh` | 启动 + 等就绪 + 回收宿主内存 | `--wait 900`、`--foreground` |
-| `bin/stop.sh` | 优雅停止（SIGTERM，60 s；**默认绝不 SIGKILL**） | `--check`（先跑这个！） |
-| `bin/status.sh` | 健康/进程/请求/KV/MTP 接受率/宿主内存 | `--short`（脚本友好）、`--watch 5` |
-| `bin/logs.sh` | 看日志（错误/启动/治愈/归档） | `-f`、`-e`、`--startup`、`--heal`、`--clean` |
-| `bin/bench.sh` | 体检 + 永久存档到 `ops/measurements/perf-history.csv` | `--full`、`--reps 3`、`--tag x` |
+| `bin/start.sh` | 启动 + 等就绪 + 回收宿主内存；支持**档位/显卡**选择 | `--model unc`、`--gpu 1`、`--model list`、`--wait 900`、`--foreground` |
+| `bin/stop.sh` | 优雅停止（SIGTERM，60 s；**默认绝不 SIGKILL**） | `--check`（先跑这个！）、`--model unc` |
+| `bin/status.sh` | 健康/进程/请求/KV/MTP 接受率/宿主内存 | `--short`（脚本友好）、`--watch 5`、`--model unc` |
+| `bin/logs.sh` | 看日志（错误/启动/治愈/归档） | `-f`、`-e`、`--startup`、`--heal`、`--clean`、`--model unc` |
+| `bin/bench.sh` | 体检 + 永久存档到 `ops/measurements/perf-history.csv`（非 main 档位的 tag 自动带 `@档位`，日志名带档位） | `--full`、`--reps 3`、`--tag x`、`--model unc` |
 | `bin/drop_host_cache.sh` | 把 WSL 页缓存还给 Windows（不碰引擎） | 加载模型后必跑 |
+| `vllm-native/bin/run_native.sh` **选档位** | 直接用环境变量选：`QWEN_MODEL=unc` ⇒ 模型目录/端口/卡/pid/日志全部跟着变（`server-unc.*`），**不影响主实例** | `QWEN_MODEL=unc vllm-native/bin/run_native.sh start\|status\|stop\|print-cmd`（见 `ops/OPS.md §9.37`、§9.40） |
 
 ### 3.2 引擎层（只有引擎自己用）
 
@@ -92,7 +131,11 @@ diff <(tr '\0' '\n' < /proc/$(cat vllm-native/logs/server.pid)/cmdline | tail -n
 | `ops/tools/metrics_web.sh` / `.py` | `/metrics` 只读看板（默认 `127.0.0.1:9494`，上游端口随 `QWEN_PORT`） |
 | `ops/tools/metrics_web.html` / `dashboard.js` | 看板的**页面与渲染**（零依赖手写：KPI 条 + 差分表 + 曲线/进度条 + 深浅主题） |
 | `ops/tools/consult.sh` | 与 gpt-6-astra 会诊（见 `AGENTS.md` 第 2 节） |
+| `ops/tools/fdl.py` | 可续传并行下载器（分块 + Range + fsync + **稀疏洞检测**）；仓库/版本/目标目录可用 `REPO`/`REVISION`/`DEST`/`CONCURRENCY` 覆盖 |
+| `ops/tools/inspect_model_dir.py` | 模型目录**离线体检**：文件齐全/尺寸、每个 shard 的 header+尾部自洽、**洞（st_blocks）检测**、PLE 布局，`--ref` 可与现役模型比对 |
+| `ops/tools/cmp_model_dirs.py` | 两个模型目录逐张量**采样字节比对**（上游不给 SHA-256 时唯一的内容级证据），按类别给出"改了哪些部分" |
 | `benchmarks/bench_prefill.py` | 手动预填压测；**每次必须换 `--seed`**（否则命中前缀缓存） |
+| `ops/bench/codebench.py` | **代码能力 A/B 基准**（HumanEval / HumanEval+ / MBPP-san，执行式判定）：`run --dataset … --base-url … --out x.json` 跑一个引擎，`compare a.json b.json` 出 pass@1 + 四格表 + McNemar。协议两边必须一致，详见 `ops/OPS.md §9.37` |
 
 **看板页面怎么改**：`metrics_web.py` 每次请求都从磁盘重读 `metrics_web.html` / `dashboard.js`
 （响应头 `Cache-Control: no-store`）⇒ **改完页面不用重启看板进程，浏览器刷一下就行**；
@@ -110,6 +153,7 @@ diff <(tr '\0' '\n' < /proc/$(cat vllm-native/logs/server.pid)/cmdline | tail -n
 | `ops/diagnostics/*` | 历史诊断探针：硬编码 `localhost:9393` / `PORT=9393`，且多数直接调 `run_container.sh`（Docker 路径）；`localhost` 还违反本仓铁律 2 |
 | ~~`ops/tools/forward8000.py`~~ | **已删除**（2026-10-01）：引擎直接监听 8000 就不需要转发层了。删因与源码见 `ops/OPS.md §9.32` |
 | `ops/tools/vllm_logs.sh` | 看 **Docker 容器**日志的旧工具（原生路径请用 `bin/logs.sh`） |
+| `ops/bench/deepswe/*` | DeepSWE v1.1 试点（`run_pilot.sh` + `patch_pier_egress.py`）：**2026-10-02 用户决定放弃，已连同产物全部删除**（Pier 已卸载、squid 补丁已还原）。要重做请看 `ops/OPS.md §9.38`（含可行性实测、思考强度矩阵、两次蓝屏取证） |
 | `scripts/`、`vllm-native/opt/` | 镜像内 payload / Docker 构建脚本（`serve.sh` 默认端口 8000），保持原样以便回退 |
 
 > 保留它们的硬编码是**有意的**：那是另一个（容器）环境的配置，改了反而会让回退路径失效。
