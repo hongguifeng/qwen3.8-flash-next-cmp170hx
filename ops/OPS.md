@@ -2131,3 +2131,399 @@ MTP=2 / PLE SSD offload`，PLE 走 Windows 版 `ple_ssd_io_win.dll`），served 
    改成 `_cfg.model_name()`（环境变量优先），这样同一个解码协议能指向任意 served model；
    另外 `warmup.py` 的 `--url` **不会自动补 `/v1/completions`**（传 `http://127.0.0.1:9393` 会 404），要用
    `BASE_URL=… QWEN_SERVED_NAME=… warmup.py` 这种环境变量写法。
+
+---
+
+## 9.36 下载未审查 checkpoint 全记录：主机 BSOD、稀疏洞事故、以及"改了什么"的实测（2026-10-01 14:30 → 22:0x）
+
+### 9.36.1 目的
+把 `klee100/Qwen3.8-Flash-Next-Uncensored-AutoRound-3bpw-MTP`（revision `060ce423…`，53 文件 / 142.56 GiB）
+拉到本机，**先验证结构、再决定要不要跑**。没有动服务、没有换模型（`QWEN_MODEL_DIR` 未改）。
+
+### 9.36.2 方法（先验后下，省下 142 GiB 的盲目下载）
+1. 远程 HTTP Range 只读 safetensors header（35 个 shard），确认：
+   * 227,702 个张量名与现役模型**完全相同**（无新增/缺失）；
+   * PLE = 128 个张量、320,001,536 行、dim 160、BF16、95.37 GiB —— 与现役模型逐项一致；
+   * PLE **全部落在专用 shard**（文件内只有 `.ngram_embedding.shard_*`）⇒ 满足 `patches/qwen38-ple-ssd.patch`
+     的加载前件（"PLE SSD requires PLE tensors in dedicated shards"）。
+2. `ops/tools/fdl.py` 参数化（`REPO`/`REVISION`/`DEST`/`CONCURRENCY` 走环境变量，默认值不变），
+   目标目录 `~/models/Qwen3.8-Flash-Next-Uncensored-AutoRound-3bpw-MTP`，完成标记改为 `<DEST>/.download-complete`（铁律 10）。
+3. 速率实测：hf-mirror 与 huggingface.co 单流都是 ~0.3–7 MB/s，**16 路与 32 路并发的聚合都卡在 ~10–11 MiB/s**
+   ⇒ 瓶颈是代理的每 IP 总带宽，加并发只会招来 `SSL: UNEXPECTED_EOF`（实测 retries 冲到 274）。
+   **结论：这个代理下 16 并发是最优，别再往上加。**
+
+### 9.36.3 下载期间真发生的两次主机级事件（Windows 事件日志为准）
+| 时间 | 事件 | 判读 |
+|---|---|---|
+| 14:29:38 / 14:40:59 / 16:05:43 / 20:31:09 / 20:40:26 | `stornvme` **Event 129**（"Reset to device"）× 5 | 这块 KIOXIA NVMe 在整个下载过程中**反复发生控制器复位**，与铁律 12 记录的是同一类故障 |
+| **17:10:37** | `Kernel-Power` **Event 41** + 17:10:58 `WER-SystemErrorReporting` **1001** + 17:11:01 `EventLog 6008` | **主机蓝屏重启**（BugCheck）。下载日志正好停在 17:08:46，引擎日志停在 17:08:57 ⇒ 时间吻合，不是巧合 |
+| 18:09 / 18:24 | `User32 1074`（干净重启）× 2 | 之后再无 BSOD；18:58 恢复下载、21:05 下完，未再崩溃 |
+| 20:40:35 | 旧引擎（pid 4381/4683）**优雅关停**（`[shutdown] EngineCore: request processing complete`） | 20:40:26 刚发生一次 stornvme 129；20:41–20:46 新引擎（pid 66942/67279）起来 ⇒ **待确认是人工停/起还是被复位带崩** |
+
+⇒ **铁律 12 需要升级为"写放大也会触发"**：这次不是删除/扫描，而是**143 GiB 持续随机写**（16 路 × 16 MiB）
+  在引擎同时跑的时候把主机写崩了一次。下一步该做的是 **关 ASPM / PCIe 链路电源管理**（铁律 12 已列的优先级），
+  以及**大下载一律先 `bin/stop.sh`**。
+
+### 9.36.4 稀疏"洞"事故：尺寸/尾部全对，内容是 0（这次差点交付一个坏模型）
+* 现象：`cmp_model_dirs.py` 采样比对发现未审查模型的 PLE `shard_22` 有 37.7% 窗口、
+  `shard_23` 有 2.1% 窗口与现役模型不同；而**从上游重新抓这些字节后，逐字节等于现役模型**。
+* 定位：`stat -c %b`（已分配块数）显示 `model-00005-of-00031.safetensors` **少分配 303.9 MiB**
+  = 289 MiB（shard_22）+ 16 MiB（shard_23），读出来**全是 0**。
+* 根因：17:10 蓝屏时，`.part` 里已写但**还在 page cache 的脏页丢失**；而 `.fdl-state.json`
+  在此之前已经 `fsync` 过，把这 48 块记成"完成"⇒ 18:58 恢复下载时**跳过**了它们，文件从此带着洞。
+* 修复（`ops/tools/fdl.py`）：
+  1. 每个分块写完立即 `f.flush() + os.fsync()`，**数据落盘才允许进 state**；
+  2. 启动时对"已完成"和 `.part` 文件做 `has_holes()` 检查（`st_blocks*512 < st_size`）⇒ 有洞就重下；
+  3. 全部完成后**再次**做洞检查，有洞就**不写完成标记**并返回退出码 1。
+* 教训：**尺寸对、safetensors header 能解析、数据尾部字节数也对，都不能证明文件没坏**。
+  这类静默损坏只能靠 (a) `st_blocks` 洞检测、(b) 与上游逐字节比对 抓到。
+
+### 9.36.5 实测：这个 checkpoint 到底"改了什么"
+| 项目 | 结果 | 依据 |
+|---|---|---|
+| PLE 表（95.37 GiB / 128 张量） | **与现役模型逐字节一致**（洞修好后） | 每张量 256 窗口 × 4 KB 采样 + 差异窗用**上游官方基座**（`Qwen/Qwen3.8-Flash-Next` @ `de4b8e4d`）仲裁 |
+| MTP 头（4,651 张量） | **完全一致**（0 个张量有差异） | 同上比对 |
+| 4-bit 量化权重（221,463 个张量） | **绝大多数不同** | 但两边都是 `auto-round` bits=2 / group 64，差异来自**不同校准集**（未审查版用被删安全数据的 OrcaRouter 校准），不是"逐张量定位改写" |
+| 索引/命名 | 227,702 个张量名 100% 相同；只有 shard 切分不同（31+2+2 vs 现役 11+2） | 加载器按前缀扫，不受影响 |
+| 交付物 | 无 `build_info.json`、无质量/服务/验证报告；`recipe.json` 自述 `status = proposed; …pending` | 仓库文件清单 |
+
+⇒ 结论：**结构上可以被现在的 PLE-SSD 运行时加载**；但它是"整表重新量化 + 安全数据被替换"的半成品，
+  MTP 头虽与现役一致，接受率是否变化未验证。要不要跑是**另一个决定**（需要停引擎换 `QWEN_MODEL_DIR`）。
+
+### 9.36.6 新增工具（都只读、都不碰引擎）
+| 工具 | 用途 |
+|---|---|
+| `ops/tools/inspect_model_dir.py [DIR] [--ref DIR] [--api] [--json]` | 离线体检：文件清单/尺寸、每个 shard 的 header+尾部自洽、**洞检测**、PLE 布局、与参考模型比对 |
+| `ops/tools/cmp_model_dirs.py A B [--windows N] [--ple-windows N]` | 逐张量**采样字节比对**（仓库不给 SHA-256 时唯一的内容级证据），按类别聚合"改了哪些部分" |
+| `ops/tools/fdl.py`（改） | 参数化 + 完成标记迁到 DEST + fsync/洞检测 + 失败可见（打印前 12 次与每 100 次错误） |
+
+### 9.36.7 残余风险 / 待办
+1. **仓库不提供 SHA-256**（只有 size-only 清单）⇒ 内容级证据上限是"采样比对 + 上游基座仲裁"，不是哈希级证明。
+2. 洞检测只能发现"未分配块"；若崩溃发生在**已分配但内容错**的场景，仍需 `cmp_model_dirs.py` 这类比对。
+3. NVMe：5 次 `stornvme` 129 + 1 次 BSOD 都发生在持续大写入期间 ⇒ **关 ASPM**、**下载前停引擎**。
+4. 是否用这个 checkpoint 起引擎、以及要不要先和 gpt-6-astra 会诊（`act_group_aware`/gptq 组合在 AutoRound 后端的行为），未决定。
+
+---
+
+## 9.37 双实例并行：GPU1 起第二个引擎（未审查 checkpoint），并用代码基准做 A/B（2026-10-01 23:39 → 次日 00:11）
+
+### 9.37.1 为什么能做（先查的事实，不是假设）
+* 本机**有两张 CMP 170HX**（`nvidia-smi -L`：GPU0 `f897f9ac…`、GPU1 `06011618…`），
+  AGENTS.md §1 里"一张卡"的说法不准确；GPU1 当时**完全空闲**（0 MiB / 0%，Windows 侧 :9393 引擎已停）。
+* PLE 原生库 `strings ple_ssd_io.so` 里**没有任何全局资源名**（无 `/dev/shm`、无固定文件名/端口）⇒
+  同机跑第二个实例不会撞名；`config/engine.env` 的 `CUDA_VISIBLE_DEVICES=0` 用 `QWEN_B_GPU=1` 覆盖即可。
+* 宿主内存 47 GiB：单实例常驻只有 APIServer 2.6 GiB + EngineCore 3.8 GiB，第二个实例装得下。
+
+### 9.37.2 怎么起的（保持"唯一来源"与"唯一命令行"两条约定）
+1. `config/engine.env` 新增 B 档默认值：`QWEN_B_PORT=8001` / `QWEN_B_GPU=1` /
+   `QWEN_B_SERVED_NAME=Qwen3.8-Flash-Next-Uncensored` / `QWEN_B_MODEL_DIR=~/models/Qwen3.8-Flash-Next-Uncensored-…`。
+2. `vllm-native/bin/run_native.sh` 支持 `QWEN_INSTANCE=b`：**只**把 pid/日志改成 `server-b.pid` / `server-b.log`
+   （不覆盖主实例），并用 B 档覆盖端口/模型/卡；**显式传的环境变量仍然优先**（用 source 前记下的 `_ORIG_*` 判断）。
+3. 启动：`QWEN_INSTANCE=b vllm-native/bin/run_native.sh start|status|stop`。
+   **参数与主实例逐字相同**（MTP=2、ctx 262144、seqs 4、batch 2048、gpu-mem 0.94、PLE SSD 同一份配置），
+   只有模型目录/端口/卡不同 ⇒ 两边可比。
+4. 验证：主实例命令行与线上进程 `diff` **逐项一致**（改动没碰主实例）；
+   实例 B 起来后 `health=200`、`/v1/models` 返回 `Qwen3.8-Flash-Next-Uncensored`、
+   显存 **59953 MiB vs 主实例 60045 MiB**（同一量级 ⇒ 参数确实一致），加载耗时 116 s + 43 s + init 42 s。
+
+### 9.37.3 基准与协议（两边完全相同的协议）
+| 基准 | n | 协议 | 备注 |
+|---|---|---|---|
+| HumanEval | 164 | 官方拼法（`prompt` 直接喂 `/v1/completions`，`prompt+续写` 拼测试） | 官方 5 个停用词被本引擎砍成 4 个（`stop` 上限 4，实测 400）⇒ 去掉 `"\nprint"`，**两边一致** |
+| HumanEval+ | 164 | 同上（**同 prompt**，测试从几条扩到几十条） | 分辨力比原版高得多，适合 164 题的小样本 |
+| MBPP-sanitized | 427 | chat（`enable_thinking` 默认关） | 提示词给测试（否则模型自己起函数名，实测 5/5 NameError） |
+
+工具：新增 `ops/bench/codebench.py`（`run` / `compare` 两个子命令，执行式判定，四格表 + McNemar）。
+踩到的坑：① 裸补全路径下模型会自己写 `<think>`（chat 模板的 `enable_thinking=false` 管不到它），
+MBPP 会把 512 token 预算全花在推理上 ⇒ 必须剥 `<think>`；② MBPP 的 prompt 是自然语言，**不能**直接拼成程序。
+
+### 9.37.4 结果（全部 greedy，T=0，单样本）
+| 基准 | 现役 A（GPU0） | 未审查 B（GPU1） | Δ(A−B) | 仅 A 过 / 仅 B 过 | McNemar |
+|---|---|---|---|---|---|
+| HumanEval | **0.8171**（134/164） | 0.8110（133/164） | +0.61 pt | 15 / 14 | z=0.19 |
+| HumanEval+ | **0.8232**（135/164） | 0.7927（130/164） | +3.05 pt | 20 / 15 | z=0.85 |
+| MBPP-san | 0.8993（384/427） | **0.9040**（386/427） | −0.47 pt | 7 / 9 | z=0.50 |
+| **合并** | **0.8649**（653/755） | 0.8596（649/755） | +0.53 pt | 42 / 38 | **z=0.45** |
+| 速度 | 114~128 tok/s | 121~130 tok/s | — | — | — |
+
+**结论：两个 checkpoint 的代码能力差异在本机可测精度内为零**（合并 755 题、38 vs 42 个分歧，
+McNemar z=0.45）。HumanEval+ 那 3 pt 是唯一看起来"有方向"的项，但它没到显著（z=0.85），
+而且 MBPP（n=427，样本量最大）方向相反 ⇒ 视为噪声。要在 3 pt 级别拿到显著结论，需要 **~2000 题量级**
+或多次采样（n≥4，temperature>0）。速度与显存占用两边一致，MTP=2 的收益没有因为换 checkpoint 消失。
+
+### 9.37.5 两个附带结论
+1. **NVMe 复位的触发条件是"持续写"，不是"双引擎读"**：本次双实例 + 755 次生成期间，
+   Windows 事件日志里 `stornvme` **129 事件为 0**（近 3 小时无匹配）；而 9.36 那次 143 GiB 下载期间有 5 次并伴随一次 BSOD。
+   ⇒ 铁律 12 的措辞应改成"避免长时间大写入"，下载/大盘复制前先停引擎。
+2. **MBPP 的绝对值偏高（~90%）**：测试既在提示词里又被用作评分 ⇒ 存在"照着断言硬编码"的空间，
+   只适合做**相对**对比，不适合引用绝对分数。
+
+### 9.37.6 现状（收尾时实测）
+* 主实例：`health=200`、`running=0.0`、`acc=77.0%`、GPU0 60045 MiB、35 W；
+* 实例 B：`health=200`、GPU1 59953 MiB、35 W（**仍在运行**，stop 用 `QWEN_INSTANCE=b vllm-native/bin/run_native.sh stop`）；
+* 结果文件：`ops/measurements/codebench-{humaneval,heplus,mbpp}-{current,uncensored}.json`，
+  运行日志 `ops/measurements/codebench-run{,2}.log`。
+
+---
+
+## §9.38 DeepSWE v1.1 试点（2026-10-02）：可行性、思考强度、Pier 沙箱打通
+
+### 9.38.1 为什么选它 / 它是什么
+* Datacurve 的 **113 题长程 agentic 编码基准**（113 题 / 91 repo / 5 语言：typescript 35、python 34、go 34、rust 5、javascript 5）；
+  题目原创、程序化 verifier、**按 test node-id 判分**（f2p / p2p 分开算），v1.1（2026-06-14）改为在干净容器里重放 agent 的 commit。
+* 榜首（v1.1 榜 2026-09-22）：gpt-6-astra[xhigh] 74%±3%（$4.43/题、30k 输出 token、29 步）、gemini-3.8-flash[high] 74%±1%（143k token/166 步）。
+* **要授权吗？不要**：HF 上的 `datacurve/deep-swe` 是 gated（无 token=401），但**任务与测试都在公开 GitHub repo**里
+  （`datacurve-ai/deep-swe`，117 条目=113 题；`tasks/<id>/tests/` 含 `test.patch`/`grader.py`/`test.sh`/`config.json`）⇒ 不需要 HF 账号。
+
+### 9.38.2 磁盘/镜像实测（与 SWE-bench Verified 对比的关键差异）
+| 项 | 实测 |
+|---|---|
+| 官方预构建镜像 | `public.ecr.aws/d3j8x8q7/swe-bench-202605:<ext_id>-v1.1`，单题 **0.73~0.78 GiB 压缩 / 27~29 层**，前 4 层跨题完全相同 |
+| 基础镜像 | `public.ecr.aws/x8v8d7g8/mars-base:latest` 0.70 GiB 压缩 / 22 层（≈2 GiB 解包） |
+| 单题实际占盘 | **4.61 GB**（解包后，含 agent 安装层）—— 10 题试点实测见 9.38.6 |
+| 对比 SWE-bench Verified | 单实例 1.06 GiB 压缩 / ≈2.5 GiB 解包、**镜像之间几乎不共享**；全量 500 条 ≈1.3 TB ⇒ 本机 73 GB 只能跑 ~20 条（无统计意义） |
+
+### 9.38.3 思考强度：**引擎默认是关闭思考**（这条以前没写下来过）
+引擎启动参数里就有 `--default-chat-template-kwargs '{"enable_thinking": false}'`（`vllm-native/bin/run_native.sh`）。
+所以：**此前 `codebench.py` 的 MBPP（chat 路径）是"关思考"跑的**；HumanEval/HumanEval+ 走 `/v1/completions` 裸补全，
+模板完全不参与（模型自己写 `<think>`，见脚本注释）。
+
+模型 `chat_template.jinja` 只认三个值（其它值会被模板 `raise_exception` 成 HTTP 400）：
+`xhigh`（默认，会注入一句"请仔细思考"的 system 指令）/ `medium`（**不注入任何指令**）/ `low`（注入一句"思考从简"）。
+另注：**`chat_template_kwargs` 里的 `reasoning_effort` 会被 vLLM 的 `extra_kwargs` 覆盖成 None ⇒ 无效**，必须用顶层字段。
+
+实测矩阵（同一句话，`/v1/chat/completions`）：
+
+| 请求 | prompt_tokens | completion_tokens | reasoning |
+|---|---|---|---|
+| A 默认（= 引擎默认关思考） | 38 | 4 | 0 字 |
+| B 顶层 `reasoning_effort=medium` | **36** | 71 | **135 字** |
+| C `low` | 62（+26 指令） | 39 | 88 字 |
+| D `xhigh` | 74（+38 指令） | 68 | 146 字 |
+| E `none` | 38 | 4 | 0 字 |
+| F `chat_template_kwargs={"enable_thinking":true}` | 74 | 68 | 146 字（等价 xhigh） |
+| G `minimal` | — | — | **HTTP 400**「Supported types are xhigh (default), medium, and low」 |
+
+**/v1/responses**（Pier 的 agent 实际走这条）用 `reasoning={"effort": …}`，实测：
+默认 out=4/reasoning_tokens=0；`medium` in=25/out=93/**reasoning_tokens=87**；`low` rt=66；`xhigh` rt=46；非法值 → 400。
+
+⇒ **后续所有测试统一用 `reasoning_effort=medium`**（= 打开思考、不注入努力提示，最干净的基线）。
+
+### 9.38.4 Pier 沙箱 → 本机引擎：一个必须打的补丁
+* `uv tool install datacurve-pier`（PyPI 0.3.1，要求 Python ≥3.12，uv 自动装）；`--env docker` 支持本地 docker。
+* **全部 113 题都是 `[agent] network_mode = "no-network"`**：agent 容器挂在一个 `internal: true` 的网络里（实测
+  `ip route` 只有 172.19.0.0/16 且无默认网关，`curl 172.17.0.1:8000` → 000），出网**只能**经 squid sidecar。
+* Pier 0.3.1 生成的 squid.conf 写死 `acl Safe_ports port 80 443` + `http_access deny !Safe_ports`
+  ⇒ **本机引擎的 8000 端口会被拒**。又因为 `NetworkAllowlist.domains` 明确禁止 `:` 和 `/`，白名单只能写域名、写不进端口。
+* 补丁 `ops/bench/deepswe/patch_pier_egress.py`（幂等，带 `.pier-orig` 备份，可 `--check/--apply/--revert`）：
+  1. `Safe_ports` += `8000`；2. 新增 `acl allowed_local_hosts dst 172.16.0.0/12`（docker 网段=宿主自己，不通外网）；
+  3. 在 `http_access deny all` 之前放行它。
+* agent 安装（uv/mini-swe-agent/litellm 成本表）是**构建镜像时**做的（`write_agent_dockerfile` → RUN 层），不受 no-network 影响。
+
+### 9.38.5 单题冒烟（任务 `bandit-structured-nosec-directives`，agent 超时压到 216 s）
+* 请求链打通（squid 访问日志）：**15 条 `TCP_MISS/200 POST http://172.17.0.1:8000/v1/responses`**，
+  即 agent 用 **Responses API**（Pier 传 `model.model_class=litellm_response`）打到本机引擎，全部 200。
+* 思考生效：这 15 条回复的 `usage.reasoning_tokens` 全部 >0（9/24/34/…/4369/5109），每条 output 都含 `reasoning` 条目。
+* 判分链可用：被 216 s 截断 ⇒ `AgentTimeoutError`，verifier 仍跑完：
+  `reward.json = {"reward":0,"f2p_total":69,"f2p_passed":0,"p2p_total":282,"p2p_passed":282,"f2p":0.0,"p2p":1.0,"partial":0.803}`。
+  即 `p2p`（回归测试）全过、`f2p`（新行为）0/69 —— 与"只读了几分钟就被掐"的预期一致。
+* 单题镜像 `…-main:latest` **4.61 GB**（含 agent 安装层；同 fingerprint 的安装层跨题复用 docker 缓存）。
+
+### 9.38.6 正式试点（进行中）
+`ops/bench/deepswe/run_pilot.sh`（默认 10 题 / `--sample-seed 0` / `-n 2` / agent 超时 ×0.5=90 分钟/题 /
+`--ak reasoning_effort=medium` / `OPENAI_API_BASE=http://172.17.0.1:8000/v1`），job 名 `pilot-medium-10`，
+产物 `ops/measurements/deepswe-jobs/pilot-medium-10/`，日志 `ops/measurements/deepswe-pilot.log`。
+**只在 GPU0 跑**（用户要求）。跑完后把每题 reward/f2p/p2p 与耗时回填到本节。
+
+### 9.38.6 试点结果与两次蓝屏取证（2026-10-02 04:28 / 08:01）
+**试点未跑完**。job `pilot-medium-10`（00:42:12 启动，04:25:37 最后一次更新）：`n_completed=5, n_errored=1, n_running=2, n_pending=3`。
+逐题（reward 是**全或无**：f2p 与 p2p 都要 100% 才算 1）：
+
+| # | 题目 | reward | f2p | p2p | partial | agent 耗时 |
+|---|---|---|---|---|---|---|
+| 1 | bandit-structured-nosec-directives | 0 | **69/69** | 281/282 | 0.997 | 53 min |
+| 2 | true-myth-iterable-collection-combinators | 0 | 74/96 | 561/561 | 0.967 | 40 min |
+| 3 | meriyah-explicit-resource-declarations | 0 | 0/49 | 51469/51469 | 0.999 | 100 min（agent 超时） |
+| 4 | langchain-request-coalescing | 0 | 48/50 | 232/232 | 0.993 | 88 min |
+| 5 | go-critic-doc-link-checker | 0 | 2/3 | 15/16 | 0.895 | 84 min |
+| 6 | effect-sse-httpapi-streaming | — | — | — | — | 被蓝屏杀（容器 Exited 255） |
+| 7 | kysely-window-grouping-helpers | — | — | — | — | 被蓝屏杀 |
+| 8-10 | arcane-drift-detection-baselines / koota-entity-snapshot-rollback / vitest-duration-sharding | — | — | — | — | 未开始 |
+
+* 聚合（Pier job stats）：5 题全 reward=0；均值 f2p 0.6795（38.6/53.4）、p2p 0.9868（10511.6/10512）、partial 0.9701。
+* **最有信息量的一条**：第 1 题 **69/69 个 f2p 全过**，只因 282 个 p2p 里挂了 1 个 ⇒ reward 0。即"差一个测试"也拿 0 分 —— 这正是 DeepSWE 区分度高、且对 2-bit 量化模型偏严的原因。
+* 单题 agent 耗时 40~100 min（`-n 2` 并发）⇒ 我们的吞吐下 113 题全量约 **70 h**（40 h~100 h）。
+
+**蓝屏取证（Windows 事件日志）**
+* `stornvme` **129（控制器重置）3 次：03:04:47 / 03:40:04 / 04:27:35** —— 全部落在试点的**拉镜像+建镜像**阶段（7 个任务镜像、约 30+ GB 写入）。
+* 04:28:05：`stornvme` 11（控制器错误）+ **`disk` 51 分页错误 ×18（\Device\Harddisk1\DR1）**；04:28:11 非正常关机
+  ⇒ **BSOD `0x7A` KERNEL_DATA_INPAGE_ERROR**（dump `100226-29828-01.dmp`）。与 9.30 那次（0x7A）同一signature。
+* **08:01:09 第二次崩溃，当时机器是空闲的**（04:28 重启后 WSL/引擎都没起来）：**BSOD `0x9F` DRIVER_POWER_STATE_FAILURE**
+  （dump `100226-21265-01.dmp`），此前 08:00:32 有 `nvlddmkm` 153。**没有 WHEA 事件。**
+* ⇒ 两个不同 bugcheck：写盘压力导致 0x7A（NVMe 掉链路→分页失败），**空闲时的 0x9F 指向电源管理/驱动电源状态转换**。
+  单纯"避免大写入"只能解释第一次；第二次必须从 **PCIe ASPM / 链路电源管理 / 选择性挂起**下手（待用户改 BIOS/电源计划）。
+
+**当前状态（08:56）**：两台引擎都**没在跑**（8000/8001 health=000，无 pid 文件）；docker 里有 2 个 `Exited (255)` 的试点容器、21 个镜像；
+`/` 903 G 已用 / **54 G 可用**（试点前 65 G，净增约 11 G）。
+
+### 9.38.7 收尾：用户决定放弃试点，产物已删除（2026-10-02 09:20）
+* **保留的结论**（备查）：reward 0/5；但 4 题在预算内平均实现 **f2p≈85%**（69/69、74/96、48/50、2/3），且 agent 花了 **75~146 步 / 75k~127k 输出 token**
+  —— 与排行榜前沿配置同量级甚至更多 ⇒ **不是"没时间"，而是"跑一百多步也没收敛到全对的补丁"**；唯一的坏信号是 meriyah（146 步、127k token、0/49 = 走错方向）。
+  n=5 的 resolve 率 95% 置信上限 ≈ **45%（单侧）/52%（双侧）**，因此**不能用这 5 题断言"模型能力太差"**。
+* **删除动作**：`ops/bench/deepswe/`（`run_pilot.sh`/`patch_pier_egress.py` + 37 MB deep-swe 克隆）、`ops/measurements/deepswe-jobs/`（60 MB）、4 个日志；
+  Pier 补丁已 `--revert`（`agent_setup.py` 还原为上游版本）、`uv tool uninstall datacurve-pier`；
+  docker 侧删掉 **15 个本次镜像**（7 个 `-main` + 8 个 squid 代理镜像）+ 2 个 Exited 容器，`docker builder prune` 回收 **15.64 GB**。
+* **删除时引擎正在被使用**（`running=1.0`），所以改用"分批 + 每条间隔 2 s"：`stornvme` 事件数删除前后**都是 3（未新增）**，引擎 `health=200`。
+* `/` 从 54 G 可用 → **73 G 可用**（Images 40.61 GB / Build Cache 14.69 GB，均恢复到试点开工前的数值）。
+* **未动**：`ghcr.io/syv-ai/hyperqwen`（14.6 GB）与 Docker 时代的构建缓存（14.69 GB）—— 都不属于本次范围。
+
+---
+
+## 9.39 电源管理取证：`0x9F` 的直接前因是「AC 空闲 60 分钟自动进入 S3」（2026-10-02）
+
+### 9.39.1 一句话结论
+
+| 崩溃 | 代码（参数 2 / 参数 1） | 直接前因（事件日志实测） | 归因 |
+|---|---|---|---|
+| 09-29 20:14:51 | `0x7A` `0xc000000e` = `STATUS_NO_SUCH_DEVICE` | `stornvme` 129 ×2（20:11:45 / 20:12:51，间隔 66 s） | **NVMe 掉链路** |
+| 10-01 17:10:37 | `0x7A` `0xc000000e` | 同上（17:0x 前有 129） | **NVMe 掉链路** |
+| 10-02 04:28:11 | `0x7A` `0xc000000e` | 129 @04:27:35 → 11 + `disk` 51 ×18 @04:28:05 | **NVMe 掉链路** |
+| **10-02 08:01:45** | **`0x9F` `Arg1=0x3`（设备对象阻塞 IRP 太久）** | **05:29:17 进 S3 → 07:59:23 固件 S3 恢复超时（130/131）→ 08:00:26~32 `nvlddmkm` 14 ×4 + 153** | **自动睡眠 / GPU 电源转换** |
+
+即：**`0x7A` ×3 与 `0x9F` ×1 是两条独立路径**，前者是盘，后者是睡眠。
+（`0x3B` ×3 @09-26/09-28 与 `0xEF` ×1 @09-26 15:35 属于探针时代，见 §9.20/§9.21，不在此列。）
+
+### 9.39.2 证据（全部可在宿主复现，命令见 9.39.6）
+
+1. **睡眠 3 次，3 次都固件 S3 超时**（`Kernel-Power` 14 天内计数：`41`×18、`40`×2、`42`×3、`107`×3、`130`×3、`131`×3）：
+   `09-26 06:31:44 42 → 06:36:28 130+131`、`09-26 07:36:56 42 → 07:40:38 130+131`、**`10-02 05:29:17 42 → 07:59:23 130+131 → 08:01:45 0x9F`**。
+2. **那次睡眠是设置触发的**：04:28:42 开机 → 05:29:17 进入睡眠 = **开机后恰好 60 分钟** = `SUB_SLEEP STANDBYIDLE` 的 **AC = 0x00000e10 = 3600 s**。
+3. **唤醒在 3 秒后**（42 → 107 间隔 3 s；09-26 那两次是 1 s）：`powercfg /devicequery wake_armed` 里两块网卡与 9 个 HID 设备都被允许唤醒 ⇒ 睡眠↔唤醒抖动，每次抖动都是一次 PCIe/NVMe/GPU 电源状态转换。
+4. **`0x9F` 前 73 秒 GPU 报错**：`08:00:26 / 08:00:29 / 08:00:32 / 08:00:32 nvlddmkm id=14（L2）` + `08:00:32 nvlddmkm id=153（L2）`；崩溃后 `08:02:03 Parsec Virtual Display Driver attach`。
+5. **`0x7A` 前的 NVMe 事件链固定成型**：129（控制器重置）→ 30~66 s 内第二次 129 → `stornvme` 11（控制器错误）+ `disk` 51 ×18（`\Device\Harddisk1\DR1` 分页写入失败）→ 崩溃。14 天内 **129 ×10、11 ×1、51 ×18**；其中 **7 次 129 是孤立的**（StorPort 恢复成功，未崩）。
+6. **宿主电源设置实测**（`powercfg /q`）：`ASPM` **AC=0（已关）/ DC=2（最大节能）**；`disk idle` AC=0 / DC=600 s；**`standby` AC=3600 s / DC=600 s**；`USB 选择性挂起` **AC=1 / DC=1（启用）**；`HiberbootEnabled=1`（快速启动开）；可用睡眠状态只有 **S3**（无 S0 低功耗待机、休眠未启用）；`/lastwake` = 无记录。
+7. **硬件**（`Win32_BaseBoard`/`Get-Disk`）：**ASUS ROG STRIX X570-E GAMING WIFI II**；`Disk 0 = INTEL SSDSC2KW512G8`（SATA 477 GiB，C:）；**`Disk 1 = KIOXIA-EXCERIA G2 SSD`（NVMe 1863 GiB，固件 `ECFA17.3`，控制器 = 厂商自己的 `PCI\VEN_1E0F&DEV_0009`）＝ D:**
+   —— §9.30 里掉的那块盘，WSL 的 `D:\wsl\ext4.vhdx` 与 143 GB 模型都在它上面。显卡侧除 **2× `NVIDIA CMP 170HX 64G`** 还有 `Radeon RX550` 与 3 个**虚拟显示适配器**（Parsec / GameViewer / i4Remote）。
+8. 14 天内 **`Kernel-Power` 41（非正常关机）×18**：机器整体稳定性长期不佳，不只是这两次蓝屏。
+
+### 9.39.3 判读：命中哪一行、否证了谁
+
+* **`0x9F` 命中「睡眠/电源转换」这一行**：`Arg1=0x3` 的语义就是「设备对象在电源转换中阻塞 IRP 超时」，而睡眠事件在它前面 2.5 小时、固件 S3 超时在它前面 2 分钟、`nvlddmkm` 报错在它前面 73 秒。
+* **被否证**：「GPU 在空闲时自己掉驱动导致 `0x9F`」（是睡眠先发生，GPU 报错在后）；「WHEA 硬件纠错」——14 天内 `Microsoft-Windows-WHEA-Logger` **0 条**（注意：用 `ProviderName='WHEA-Logger'` 过滤会得到假计数，必须用全名 `Microsoft-Windows-WHEA-Logger`）。
+* **被削弱**：`ASPM` 作为 `0x9F` 主因 —— **AC 下本来就是 0（关）**；它仍然是 `0x7A` 的候选（BIOS 层的 Native ASPM / L1 substates 不受 `powercfg` 控制，未观测）。
+* **未验证**：`0x7A` 是否热致（`Get-StorageReliabilityCounter` 在非提权下**全空**，需管理员；已有 `ops/tools/ssd_temp_log.ps1` 可用）、是否 APST/HMB（DRAM-less + 主机内存缓冲）固件问题。
+
+### 9.39.4 修复清单（按「收益 ÷ 代价」排序）
+
+| 层 | 动作 | 代价 | 消除 |
+|---|---|---|---|
+| 1 | `standby-timeout AC/DC = 0`（禁自动睡眠）、`powercfg /h off`（同时关快速启动）、`ASPM AC+DC = 0`、`disk idle = 0`、`USB 选择性挂起 = 0` | 零（可逆，不重启，不碰引擎） | **`0x9F`** |
+| 2 | 设备管理器 → KIOXIA / `Standard NVM Express Controller` / `NVIDIA CMP 170HX 64G` → 电源管理 → 取消「允许计算机关闭此设备以节约电源」 | 需重新枚举设备 | `0x9F` 的 GPU 分支 + 降低 `0x7A` 概率 |
+| 3 | 网卡（Realtek 2.5GbE / Intel I211）取消唤醒权限；不用的 Parsec/GameViewer/i4Remote 虚拟显示适配器停用 | 零 | 睡眠↔唤醒抖动（层 1 之后为次要） |
+| 4 | **BIOS**（需重启）：`PCIe ASPM = Disabled`、`Native ASPM = Disabled`、**ASPM L1 Substates (L1.1/L1.2) = Disabled**、`Power Supply Idle Control = Typical Current Idle`、确认 KIOXIA 在 **M.2_1（CPU 直连）** 而非芯片组 M.2_2 | **重启 4~5 min**，按铁律 9 需先征得同意；驱动级改动按第 2 节建议先会诊 | `0x7A` 的主要可疑项 |
+| 5 | `0x7A` 独立线：受控写测试（30~60 GB 限速）同时数 129；管理员跑 `ssd_temp_log.ps1` 看温度；KIOXIA SSD Utility 读 SMART（不安全关机/介质错误） | 中等 | 判定 `0x7A` 是电源还是固件/热 |
+| 6 | 驱动级注册表（APST / HMB / `disk TimeOutValue`）—— **未做，未公开键名不猜** | 高 | `0x7A` 兜底 |
+
+### 9.39.5 怎么知道有效（验证判据）
+
+* 立刻：`ops/tools/host_power.sh --diag` 应显示 `standby AC/DC = Off/Never`、`ASPM AC=0 DC=0`、`USB = Off`、`HiberbootEnabled = 0`。
+* 24 h 后：`Kernel-Power` 的 `42/107/130/131` **计数为 0**（层 1 的直接判据）；`stornvme 129` 是否**停止增长**（层 4 的判据）。
+* 写测试期间：`disk` 51 与 `stornvme` 11 出现 = 失败，立即停写。
+
+### 9.39.6 新增工具（只读诊断 / 需管理员才改）
+
+* `ops/tools/host_power.sh --diag`：只读，不需要管理员。打印上面 9.39.2 的 5/6/7/8 全部内容 + bugcheck 历史。
+* `ops/tools/host_power.sh --apply --yes [--elevate] [--disable-wake]`：执行层 1（可 `--rollback --yes` 回退），转储 `powercfg /q` 到 `/tmp/host-power-<ts>.{before,after}.txt` 作为证据。
+* 实现细节：`host_power.sh` 把 `ops/tools/host_power.ps1` 转成 UTF-16LE+base64 用 `-EncodedCommand` 调用 —— 绕开两件事：① stdin 逐行解析对多行块不友好（会出现 `EmptyPipeElement` 之类的假语法错误）；② 中文注释/字符串被代码页 936 搞坏导致 `ParserError`。输出统一设 `[Console]::OutputEncoding = UTF8`，全英文标签。
+
+### 9.39.7 残余风险 / 未做的事
+
+* **本轮没有改任何宿主设置**（等用户确认）；引擎与 WSL 未受影响。
+* 层 4/5/6 全未做；`0x7A` 的根因仍**未被单独证明**——层 1~4 只能降低概率，不能宣称解决。
+* 睡眠这条路径是**确定的**（3/3 都固件 S3 超时），所以层 1 是「已知有效」，不是「也许有用」。
+* 待办：把本节结论与判读回填到 `docs/DEPLOY-WSL2.md` 的故障排查表（宿主侧崩溃该怎么办）。
+
+---
+
+## 9.40 把"选模型 / 选卡"变成一等公民：`bin/start.sh --model` + `--gpu`（2026-10-02）
+
+### 9.40.1 起因
+
+uncensored checkpoint（§9.36 下载、§9.37 用它做 A/B）当时只能这样起：
+`QWEN_INSTANCE=b vllm-native/bin/run_native.sh start` —— 能跑，但：
+* `bin/start.sh` 根本不认这个变量，它是直调 launcher 的；
+* 没有任何"选哪张卡"的入口（`--gpu` 不存在），换卡得手敲 `CUDA_VISIBLE_DEVICES=`；
+* `bin/start.sh` 等就绪时看的是硬编码的 `server.pid`/`server.log`，对第二个实例会等错对象。
+
+### 9.40.2 做成什么样
+
+**一个档位（variant）= 一套「模型目录 + 对外模型名 + 端口 + 显卡」**，清单只在 `config/engine.env` 里定义：
+
+| 入口 | 作用 |
+|---|---|
+| `./start.sh --model unc` | 起未审查模型（默认 GPU1 / :8001；pid/日志 → `server-unc.*`） |
+| `./start.sh --model unc --gpu 0` | 同一档位换卡（端口仍是该档位默认值） |
+| `./start.sh --gpu 1` | 只换卡，模型仍是 main |
+| `./start.sh --model list` | 列出所有档位（模型目录/端口/显卡），不启动 |
+| `bin/{stop,status,logs}.sh --model unc` | 管哪个档位就带同一个参数（三个脚本都加了） |
+| `QWEN_MODEL=unc …` | 环境变量写法（与 `--model` 等价；launcher 也直接认） |
+
+优先级：`--model`/`QWEN_MODEL` > **显式环境变量**（`QWEN_PORT=` / `CUDA_VISIBLE_DEVICES=`）> 档位默认值。
+新增档位不改脚本：`QWEN_MODELS="main unc trl"` + `QWEN_TRL_{MODEL_DIR,SERVED_NAME,PORT,GPU}`。
+
+**向后兼容**（历史命令全部仍然可用）：`QWEN_INSTANCE=b` ≡ `QWEN_MODEL=unc`；`QWEN_B_PORT=9001` 之类的覆盖也仍然生效（档位 unc 的默认值就取自 `QWEN_B_*`）。唯一变化：实例 b 的 pid/日志名从 `server-b.*` 改为 `server-unc.*`（旧文件已随实例停用，未遗留运行中的进程）。
+
+改动的文件：`config/engine.env`（档位段，唯一默认值来源）、`bin/_common.sh`（`variant_canon`/`variant_var`/`derive_variant`/`set_variant`/`set_gpu`/`variant_list`/`gpu_usage`/`gpu_count`）、`bin/start.sh`（`--model`/`--gpu`/`--model list` + 端口/显卡占用检查）、`bin/stop.sh`、`bin/status.sh`、`bin/logs.sh`（各加 `--model`）、`vllm-native/bin/run_native.sh`（**删掉自己那套 `_ORIG_*`/INSTANCE 解析，改为 source `bin/_common.sh`** —— 档位只保留一处实现）、`docs/SCRIPTS.md` §1.1、`AGENTS.md` §4。
+
+### 9.40.3 验证（三条，都是实测）
+
+1. **重构没改主实例的语义**（最关键的一条）：
+   `diff <(tr '\0' '\n' < /proc/$(cat vllm-native/logs/server.pid)/cmdline | tail -n +2) <(vllm-native/bin/run_native.sh print-cmd)`
+   → **逐项一致（无输出）**。改完的 launcher 与线上跑了 54 分钟的进程参数完全一样。
+2. **档位差异就是它应该差的那三行**：`diff <(run_native.sh print-cmd) <(QWEN_MODEL=unc run_native.sh print-cmd)`
+   → 只有 `模型目录` / `--served-model-name` / `--port` 三处（8000→8001）。
+3. **端到端真起了第二个实例**（GPU1 当时 0 MiB）：`bin/start.sh --model unc` → **280 s 就绪**，
+   `health=200`、`/v1/models` = `Qwen3.8-Flash-Next-Uncensored`、显存 **59953 MiB**（与 §9.37 那次 59953 MiB 完全一致）；
+   两实例并行时各发一次 chat 请求均返回 `'OK'`；`bin/stop.sh --check --model unc` 报空闲可停。
+   收尾默认回收了页缓存（Windows 可用内存回到 **19 GB**，铁律 7）。
+
+### 9.40.4 踩到的一个坑（已修）
+
+`--params` 一开始写成在参数循环里直接 `print_params; exit 0` ⇒ `bin/start.sh --model unc --params`
+会打印**默认档位**的值（切档代码在循环之后）。现在改成循环里只记 `PARAMS_ONLY=1`，切档/换卡之后才输出。
+同类写法在 `bin/stop.sh`/`bin/status.sh` 里一并改掉。另外：`bin/logs.sh` 要求当前日志存在，
+对从未启动过的档位会直接报错 ⇒ 现改为只在非 `--list` 模式下检查。
+
+### 9.40.5 现状（收尾实测，2026-10-02 10:2x）
+
+* 档位 main：`health=200`（pid 25885，**带着用户请求在跑**，未受本次改动影响）；
+* 档位 unc：`health=200`（pid 50093，GPU1 59953 MiB，空转）；
+* 待办：`docs/DEPLOY-WSL2.md` 的验收基线仍只写主实例（`deploy.sh verify` 走 `bin/bench.sh --full`，即默认档位）。
+
+### 9.40.6 续改：位置参数简写 + `bench.sh --model`（同日稍后）
+
+反馈是 `./start.sh --model unc --gpu 0` 太啰嗦。现在两个位置参数就够：
+
+```bash
+./start.sh unc          # 第一个位置参数 = 档位
+./start.sh unc 0        # 第二个位置参数 = 显卡编号（端口仍是该档位默认值）
+./start.sh 1            # 只给数字 = 只换卡，模型仍是 main
+./start.sh list         # 列出档位
+```
+
+* 实现放在 **`bin/start.sh`**（`POS=()` 收集非选项参数，再按“第一个是数字则当作显卡”分流），
+  根目录 `./start.sh` 只是 `exec bin/start.sh "$@"` ⇒ **两处入口行为天然一致，仍只有一处实现**；
+  与 `--model`/`--gpu` 混用时显式长选项优先（`${MODEL_ARG:-$p1}`）。
+* 新增 `--` 结束选项解析；未知 `-*` 参数现在会报错（以前会被当成位置参数一口吃掉）。
+* **`bin/bench.sh --model`**：档位一变，`BASE_URL/QWEN_PORT/MODEL_NAME` 随之变，探针（`warmup.py`/`dec_bench.py` 经 `_cfg.py`）
+  自动指向对应实例；非 main 档位时 **tag 自动写成 `<tag>@<档位>`**、日志名写成 `bench-<档位>-<ts>.log`
+  —— **故意不动 `perf-history.csv` 的列结构**（历史行不变），也不用改任何读表的地方。
+
+**验证**（均实测）：位置参数矩阵 `unc` / `unc 0` / `0 unc` / `1` 与长写法逐个 `--params` 对比一致；
+三个位置参数、未知选项、`--gpu 5`（只有 2 张卡）都正确报错并退出 2；
+造了一个未启动的档位 `ghost`（`QWEN_MODELS` + `QWEN_GHOST_PORT=8009`）验证守卫：
+`bin/bench.sh --model ghost` → 提示“档位 ghost 的服务未就绪…，先 bin/start.sh --model ghost”并退出 1；
+真跑 `bin/bench.sh --model unc --prefill --reps 1 --tag smoke` → 2048 = 0.912 s / 8192 = 2.370 s，
+存档行为 `2026-10-02T10:09:08,smoke@unc,…`、原始日志 `bench-unc-20261002-100908.log`。
+⚠️ 这条 2048 偏高（基线 0.64~0.73 s）是因为 `--reps 1` + 该实例首次跑该长度 + 主实例同时在打请求，
+**不作为性能结论**，只作“路径通了”的证据。
